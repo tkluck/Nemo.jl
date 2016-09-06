@@ -20,9 +20,9 @@ doc"""
 > can be used to set the precision of a power series when constructing it.
 """
 function O{T}(a::RelSeriesElem{T})
-   prec = length(a) - 1
-   prec < 0 && throw(DomainError())
-   return parent(a)(Array(T, 0), 0, prec, prec)
+   val = length(a) + valuation(a) - 1
+   val < 0 && throw(DomainError())
+   return parent(a)(Array(T, 0), 0, 0, val)
 end
 
 parent_type{T}(::Type{GenRelSeries{T}}) = GenRelSeriesRing{T}
@@ -100,6 +100,10 @@ function set_prec!(a::SeriesElem, prec::Int)
    a.prec = prec
 end
 
+function set_val!(a::SeriesElem, val::Int)
+   a.val = val
+end
+
 function coeff(a::GenRelSeries, n::Int)
    n < 0  && throw(DomainError())
    return n >= length(a) ? zero(base_ring(a)) : a.coeffs[n + 1]
@@ -126,7 +130,7 @@ doc"""
 """
 function gen{T}(R::GenRelSeriesRing{T})
    S = base_ring(R)
-   return R([S(0), S(1)], 2, max_precision(R), 1)
+   return R([S(1)], 1, max_precision(R), 1)
 end
 
 doc"""
@@ -142,8 +146,7 @@ doc"""
 > its current precision, otherwise return `false`.
 """
 function isone(a::GenRelSeries)
-   return (valuation(a) == 0 && length(a) == 1 && isone(coeff(a, 0))) ||
-           precision(a) == 0
+   return valuation(a) == 0 && length(a) == 1 && isone(coeff(a, 0))
 end
 
 doc"""
@@ -153,8 +156,7 @@ doc"""
 > `false`.
 """
 function isgen(a::GenRelSeries)
-   return (valuation(a) == 1 && length(a) == 1 && isone(coeff(a, 0))) || 
-           precision(a) == 0
+   return valuation(a) == 1 && length(a) == 1 && isone(coeff(a, 0))
 end
 
 doc"""
@@ -183,6 +185,29 @@ function deepcopy{T <: RingElem}(a::GenRelSeries{T})
       coeffs[i] = deepcopy(coeff(a, i - 1))
    end
    return parent(a)(coeffs, length(a), precision(a), valuation(a))
+end
+
+function renormalize!(z::RelSeriesElem)
+   i = 0
+   zlen = length(z)
+   zval = valuation(z)
+   zprec = precision(z)
+   while i < zlen && coeff(z, i) == 0
+      i += 1
+   end
+   if i == zlen
+      set_length!(z, 0)
+      set_prec!(z, 0)
+      set_val!(z, zval + zprec)
+   else
+      set_prec!(z, zprec - i)
+      set_val!(z, zval + i)
+      for j = 1:zlen - i
+         setcoeff!(z, j - 1, coeff(z, j + i - 1))
+      end
+      set_length!(z, zlen - i)
+   end
+   return nothing
 end
 
 ###############################################################################
@@ -261,6 +286,7 @@ function -{T <: RingElem}(a::RelSeriesElem{T})
    len = length(a)
    z = parent(a)()
    set_prec!(z, precision(a))
+   set_val!(z, valuation(a))
    fit!(z, len)
    for i = 1:len
       setcoeff!(z, i - 1, -coeff(a, i - 1))
@@ -282,27 +308,53 @@ function +{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
    check_parent(a, b)
    lena = length(a)
    lenb = length(b)
-   prec = min(precision(a), precision(b))
-   lena = min(lena, prec)
-   lenb = min(lenb, prec)
-   lenz = max(lena, lenb)
+   vala = valuation(a)
+   valb = valuation(b)
+   valz = min(vala, valb)
+   prec = min(vala + precision(a), valb + precision(b))
+   mina = min(vala + lena, prec)
+   minb = min(valb + lenb, prec)
+   lenz = max(mina, minb) - valz
+   R = base_ring(a)
    z = parent(a)()
    fit!(z, lenz)
-   set_prec!(z, prec)
-   i = 1
-   while i <= min(lena, lenb)
-      setcoeff!(z, i - 1, coeff(a, i - 1) + coeff(b, i - 1))
-      i += 1
+   set_prec!(z, prec - valz)
+   set_val!(z, valz)
+   if vala >= valb
+      for i = 1:min(lenb, vala - valb)
+         setcoeff!(z, i - 1, coeff(b, i - 1))
+      end
+      for i = lenb + 1:vala - valb
+         setcoeff!(z, i - 1, R())
+      end
+      for i = vala - valb + 1:lenb
+         setcoeff!(z, i - 1, coeff(a, i - vala + valb - 1) + coeff(b, i - 1))
+      end
+      for i = max(lenb, vala - valb) + 1:lena + vala - valb
+         setcoeff!(z, i - 1, coeff(a, i - vala + valb - 1))
+      end
+      for i = lena + vala - valb + 1:lenb
+         setcoeff!(z, i - 1, coeff(b, i - 1))
+      end
+   else
+      for i = 1:min(lena, valb - vala)
+         setcoeff!(z, i - 1, coeff(a, i - 1))
+      end
+      for i = lena + 1:valb - vala
+         setcoeff!(z, i - 1, R())
+      end
+      for i = valb - vala + 1:lena
+         setcoeff!(z, i - 1, coeff(a, i - 1) + coeff(b, i - valb + vala - 1))
+      end
+      for i = max(lena, valb - vala) + 1:lenb + valb - vala
+         setcoeff!(z, i - 1, coeff(b, i - valb + vala - 1))
+      end
+      for i = lenb + valb - vala + 1:lena
+         setcoeff!(z, i - 1, coeff(a, i - 1))
+      end
    end
-   while i <= lena
-      setcoeff!(z, i - 1, coeff(a, i - 1))
-      i += 1
-   end
-   while i <= lenb
-      setcoeff!(z, i - 1, coeff(b, i - 1))
-      i += 1
-   end
-   set_length!(z, normalise(z, i - 1))
+   set_length!(z, normalise(z, lenz))
+   renormalize!(z)
    return z
 end
   
@@ -314,27 +366,53 @@ function -{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
    check_parent(a, b)
    lena = length(a)
    lenb = length(b)
-   prec = min(precision(a), precision(b))
-   lena = min(lena, prec)
-   lenb = min(lenb, prec)
-   lenz = max(lena, lenb)
+   vala = valuation(a)
+   valb = valuation(b)
+   valz = min(vala, valb)
+   prec = min(vala + precision(a), valb + precision(b))
+   mina = min(vala + lena, prec)
+   minb = min(valb + lenb, prec)
+   lenz = max(mina, minb) - valz
+   R = base_ring(a)
    z = parent(a)()
    fit!(z, lenz)
-   set_prec!(z, prec)
-   i = 1
-   while i <= min(lena, lenb)
-      setcoeff!(z, i - 1, coeff(a, i - 1) - coeff(b, i - 1))
-      i += 1
+   set_prec!(z, prec - valz)
+   set_val!(z, valz)
+   if vala >= valb
+      for i = 1:min(lenb, vala - valb)
+         setcoeff!(z, i - 1, -coeff(b, i - 1))
+      end
+      for i = lenb + 1:vala - valb
+         setcoeff!(z, i - 1, R())
+      end
+      for i = vala - valb + 1:lenb
+         setcoeff!(z, i - 1, coeff(a, i - vala + valb - 1) - coeff(b, i - 1))
+      end
+      for i = max(lenb, vala - valb) + 1:lena + vala - valb
+         setcoeff!(z, i - 1, coeff(a, i - vala + valb - 1))
+      end
+      for i = lena + vala - valb + 1:lenb
+         setcoeff!(z, i - 1, -coeff(b, i - 1))
+      end
+   else
+      for i = 1:min(lena, valb - vala)
+         setcoeff!(z, i - 1, coeff(a, i - 1))
+      end
+      for i = lena + 1:valb - vala
+         setcoeff!(z, i - 1, R())
+      end
+      for i = valb - vala + 1:lena
+         setcoeff!(z, i - 1, coeff(a, i - 1) - coeff(b, i - valb + vala - 1))
+      end
+      for i = max(lena, valb - vala) + 1:lenb + valb - vala
+         setcoeff!(z, i - 1, -coeff(b, i - valb + vala - 1))
+      end
+      for i = lenb + valb - vala + 1:lena
+         setcoeff!(z, i - 1, coeff(a, i - 1))
+      end
    end
-   while i <= lena
-      setcoeff!(z, i - 1, coeff(a, i - 1))
-      i += 1
-   end
-   while i <= lenb
-      setcoeff!(z, i - 1, -coeff(b, i - 1))
-      i += 1
-   end
-   set_length!(z, normalise(z, i - 1))
+   set_length!(z, normalise(z, lenz))
+   renormalize!(z)
    return z
 end
 
@@ -348,11 +426,12 @@ function *{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
    lenb = length(b)
    aval = valuation(a)
    bval = valuation(b)
-   prec = min(precision(a) + bval, precision(b) + aval)
+   zval = aval + bval
+   prec = min(precision(a), precision(b))
    lena = min(lena, prec)
    lenb = min(lenb, prec)
    if lena == 0 || lenb == 0
-      return parent(a)(Array(T, 0), 0, prec)
+      return parent(a)(Array(T, 0), 0, prec, aval + bval)
    end
    t = base_ring(a)()
    lenz = min(lena + lenb - 1, prec)
@@ -373,7 +452,7 @@ function *{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
          end
       end
    end        
-   z = parent(a)(d, lenz, prec)
+   z = parent(a)(d, lenz, prec, zval)
    set_length!(z, normalise(z, lenz))
    return z
 end
@@ -393,6 +472,7 @@ function *{T <: RingElem}(a::T, b::RelSeriesElem{T})
    z = parent(b)()
    fit!(z, len)
    set_prec!(z, precision(b))
+   set_val!(z, valuation(b))
    for i = 1:len
       setcoeff!(z, i - 1, a*coeff(b, i - 1))
    end
@@ -409,6 +489,7 @@ function *{T <: RingElem}(a::Integer, b::RelSeriesElem{T})
    z = parent(b)()
    fit!(z, len)
    set_prec!(z, precision(b))
+   set_val!(z, valuation(b))
    for i = 1:len
       setcoeff!(z, i - 1, a*coeff(b, i - 1))
    end
@@ -425,6 +506,7 @@ function *{T <: RingElem}(a::fmpz, b::RelSeriesElem{T})
    z = parent(b)()
    fit!(z, len)
    set_prec!(z, precision(b))
+   set_val!(z, valuation(b))
    for i = 1:len
       setcoeff!(z, i - 1, a*coeff(b, i - 1))
    end
@@ -538,17 +620,16 @@ function shift_left{T <: RingElem}(x::RelSeriesElem{T}, len::Int)
    xlen = length(x)
    if xlen == 0
       z = zero(parent(x))
-      set_prec!(z, precision(x) + len)
+      set_prec!(z, precision(x))
+      set_val!(z, valuation(x) + len)
       return z
    end
    z = parent(x)()
-   fit!(z, xlen + len)
-   set_prec!(z, precision(x) + len)
-   for i = 1:len
-      setcoeff!(z, i - 1, zero(base_ring(x)))
-   end
+   fit!(z, xlen)
+   set_prec!(z, precision(x))
+   set_val!(z, valuation(x) + len)
    for i = 1:xlen
-      setcoeff!(z, i + len - 1, coeff(x, i - 1))
+      setcoeff!(z, i - 1, coeff(x, i - 1))
    end
    return z
 end
@@ -561,17 +642,23 @@ doc"""
 function shift_right{T <: RingElem}(x::RelSeriesElem{T}, len::Int)
    len < 0 && throw(DomainError())
    xlen = length(x)
-   if len >= xlen
+   xval = valuation(x)
+   xprec = precision(x)
+   if len >= xlen + xval
       z = zero(parent(x))
-      set_prec!(z, max(0, precision(x) - len))
+      set_prec!(z, 0)
+      set_val!(z, max(0, xprec + xval - len))
       return z
    end
    z = parent(x)()
-   fit!(z, xlen - len)
-   set_prec!(z, precision(x) - len)
-   for i = 1:xlen - len
-      setcoeff!(z, i - 1, coeff(x, i + len - 1))
+   zlen = min(xlen + xval - len, xlen)
+   fit!(z, zlen)
+   set_prec!(z, xprec - xlen + zlen)
+   set_val!(z, max(0, xval - len))
+   for i = 1:zlen
+      setcoeff!(z, i - 1, coeff(x, i + xlen  - zlen - 1))
    end
+   renormalize!(z)
    return z
 end
 
@@ -587,20 +674,27 @@ doc"""
 """
 function truncate{T <: RingElem}(a::RelSeriesElem{T}, prec::Int)
    prec < 0 && throw(DomainError())
-   len = length(a)
-   if precision(a) <= prec
+   alen = length(a)
+   aprec = precision(a)
+   aval = valuation(a)
+   if aprec + aval <= prec
       return a
    end
+   if prec <= aval
+      z = parent(a)()
+      set_length!(z, 0)
+      set_prec!(z, 0)
+      set_val!(z, prec)
+      return z
+   end
    z = parent(a)()
-   fit!(z, prec)
-   set_prec!(z, prec)
-   for i = 1:min(prec, len)
+   fit!(z, prec - aval)
+   set_prec!(z, prec - aval)
+   for i = 1:min(prec - aval, alen)
       setcoeff!(z, i - 1, coeff(a, i - 1))
    end
-   for i = len + 1:prec
-      setcoeff!(z, i - 1, zero(base_ring(a)))
-   end
-   set_length!(z, normalise(z, prec))
+   set_length!(z, normalise(z, prec - aval))
+   set_val!(z, aval)
    return z
 end
 
@@ -619,20 +713,21 @@ function ^{T <: RingElem}(a::RelSeriesElem{T}, b::Int)
    # special case powers of x for constructing power series efficiently
    if isgen(a)
       z = parent(a)()
-      fit!(z, b + 1)
-      set_prec!(z, precision(a) + b - 1)
-      setcoeff!(z, b, coeff(a, 1))
-      for i = 1:b
-         setcoeff!(z, i - 1, coeff(a, 0))
-      end
+      fit!(z, 1)
+      set_prec!(z, precision(a))
+      setcoeff!(z, 0, coeff(a, 0))
+      set_val!(z, b)
+      set_length!(z, 1)
       return z
    elseif length(a) == 0
       z = parent(a)()
-      set_prec!(z, precision(a) + (b - 1)*valuation(a))
+      set_prec!(z, 0)
+      set_val!(z, b*valuation(a))
       return z
    elseif length(a) == 1
       z = parent(a)(coeff(a, 0)^b)
       set_prec!(z, precision(a))
+      set_val!(z, b*valuation(a))
       return z
    elseif b == 0
       z = one(parent(a))
@@ -670,25 +765,23 @@ doc"""
 """
 function =={T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
    check_parent(x, y)
-   prec = min(precision(x), precision(y))
-   m1 = min(length(x), length(y))
-   m2 = max(length(x), length(y))
-   m1 = min(m1, prec)
-   m2 = min(m2, prec)
-   if length(x) >= m2
-      for i = m1 + 1: m2
-         if coeff(x, i - 1) != 0
-            return false
-          end
-      end
-   else
-      for i = m1 + 1: m2
-         if coeff(y, i - 1) != 0
-            return false
-          end
-      end
+   xval = valuation(x)
+   xprec = precision(x)
+   yval = valuation(y)
+   yprec = precision(y)
+   prec = min(xval + xprec, yval + yprec)
+   if prec <= xval && prec <= yval
+      return true
    end
-   for i = 1:m1
+   if xval != yval
+      return false
+   end
+   xlen = min(length(x), xprec)
+   ylen = min(length(y), yprec)
+   if xlen != ylen
+      return false
+   end
+   for i = 1:xlen
       if coeff(x, i - 1) != coeff(y, i - 1)
          return false
       end
@@ -706,7 +799,8 @@ function isequal{T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
    if parent(x) != parent(y)
       return false
    end
-   if precision(x) != precision(y) || length(x) != length(y)
+   if precision(x) != precision(y) || length(x) != length(y) ||
+      valuation(x) != valuation(y)
       return false
    end
    for i = 1:length(x)
@@ -728,7 +822,8 @@ doc"""
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
 =={T <: RingElem}(x::RelSeriesElem{T}, y::T) = precision(x) == 0 ||
-           ((length(x) == 0 && y == 0) || (length(x) == 1 && coeff(x, 0) == y))
+           ((length(x) == 0 && y == 0) || (length(x) == 1 && 
+             valuation(x) == 0 && coeff(x, 0) == y))
 
 doc"""
     =={T <: RingElem}(x::T, y::RelSeriesElem{T})
@@ -740,15 +835,17 @@ doc"""
     ==(x::RelSeriesElem, y::Integer)
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
-==(x::RelSeriesElem, y::Integer) = precision(x) == 0 || ((length(x) == 0 && y == 0)
-                                       || (length(x) == 1 && coeff(x, 0) == y))
+==(x::RelSeriesElem, y::Integer) = precision(x) == 0 ||
+                  ((length(x) == 0 && y == 0) || (length(x) == 1 && 
+                    valuation(x) == 0 && coeff(x, 0) == y))
 
 doc"""
     ==(x::RelSeriesElem, y::fmpz)
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
-==(x::RelSeriesElem, y::fmpz) = precision(x) == 0 || ((length(x) == 0 && y == 0)
-                                       || (length(x) == 1 && coeff(x, 0) == y))
+==(x::RelSeriesElem, y::fmpz) = precision(x) == 0 ||
+                  ((length(x) == 0 && y == 0) || (length(x) == 1 && 
+                    valuation(x) == 0 && coeff(x, 0) == y))
 
 doc"""
     ==(x::Integer, y::RelSeriesElem)
@@ -783,7 +880,7 @@ function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
          y = shift_right(y, v2)
       end
    end
-   y = truncate(y, precision(x))
+   y = truncate(y, valuation(x) + precision(x))
    return x*inv(y)
 end
 
@@ -803,6 +900,7 @@ function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::Integer)
    z = parent(x)()
    fit!(z, lenx)
    set_prec!(z, precision(x))
+   set_val!(z, valuation(x))
    for i = 1:lenx
       setcoeff!(z, i - 1, divexact(coeff(x, i - 1), y))
    end
@@ -819,6 +917,7 @@ function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::fmpz)
    z = parent(x)()
    fit!(z, lenx)
    set_prec!(z, precision(x))
+   set_val!(z, valuation(x))
    for i = 1:lenx
       setcoeff!(z, i - 1, divexact(coeff(x, i - 1), y))
    end
@@ -835,6 +934,7 @@ function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::T)
    z = parent(x)()
    fit!(z, lenx)
    set_prec!(z, precision(x))
+   set_val!(z, valuation(x))
    for i = 1:lenx
       setcoeff!(z, i - 1, divexact(coeff(x, i - 1), y))
    end
@@ -870,6 +970,7 @@ function inv(a::RelSeriesElem)
       setcoeff!(ainv, n - 1, divexact(s, a1))
    end
    set_length!(ainv, normalise(ainv, precision(a)))
+   set_val!(ainv, 0)
    return ainv
 end
 
@@ -887,22 +988,29 @@ function exp(a::RelSeriesElem)
    if a == 0
       z = one(parent(a))
       set_prec!(z, precision(a))
+      set_val!(z, valuation(a))
       return z
    end
    z = parent(a)()
-   fit!(z, precision(a))
-   set_prec!(z, precision(a))
-   setcoeff!(z, 0, exp(coeff(a, 0)))
-   len = length(a)
-   for k = 1 : precision(a) - 1
-      s = zero(base_ring(a))
+   R = base_ring(a)
+   vala = valuation(a)
+   preca = precision(a)
+   fit!(z, preca + vala)
+   set_prec!(z, preca + vala)
+   c = vala == 0 ? coeff(a, 0) : R()
+   setcoeff!(z, 0, exp(c))
+   len = length(a) + vala
+   for k = 1 : preca + vala - 1
+      s = R()
       for j = 1 : min(k + 1, len) - 1
-         s += j * coeff(a, j) * coeff(z, k - j)
+         c = j >= vala ? coeff(a, j - vala) : R()
+         s += j * c * coeff(z, k - j)
       end
-      !isunit(base_ring(a)(k)) && error("Unable to divide in exp")
+      !isunit(R(k)) && error("Unable to divide in exp")
       setcoeff!(z, k, divexact(s, k))
    end
-   set_length!(z, normalise(z, precision(a)))
+   set_length!(z, normalise(z, preca + vala))
+   set_val!(z, 0)
    return z
 end
 
@@ -937,33 +1045,25 @@ end
 function mul!{T <: RingElem}(c::GenRelSeries{T}, a::GenRelSeries{T}, b::GenRelSeries{T})
    lena = length(a)
    lenb = length(b)
-
    aval = valuation(a)
    bval = valuation(b)
-
-   prec = min(precision(a) + bval, precision(b) + aval)
-   
+   prec = min(precision(a), precision(b))
    lena = min(lena, prec)
    lenb = min(lenb, prec)
-   
    if lena == 0 || lenb == 0
       c.length = 0
    else
       t = base_ring(a)()
-
       lenc = min(lena + lenb - 1, prec)
       fit!(c, lenc)
-
       for i = 1:min(lena, lenc)
          mul!(c.coeffs[i], coeff(a, i - 1), coeff(b, 0))
       end
-
       if lenc > lena
          for i = 2:min(lenb, lenc - lena + 1)
             mul!(c.coeffs[lena + i - 1], coeff(a, lena - 1), coeff(b, i - 1))
          end
       end
-
       for i = 1:lena - 1
          if lenc > i
             for j = 2:min(lenb, lenc - i + 1)
@@ -971,29 +1071,57 @@ function mul!{T <: RingElem}(c::GenRelSeries{T}, a::GenRelSeries{T}, b::GenRelSe
                addeq!(c.coeffs[i + j - 1], t)
             end
          end
-      end
-        
+      end        
       c.length = normalise(c, lenc)
    end
    c.prec = prec
+   c.val = a.val + b.val
 end
 
 function addeq!{T <: RingElem}(c::GenRelSeries{T}, a::GenRelSeries{T})
    lenc = length(c)
    lena = length(a)
-   
-   prec = min(precision(a), precision(c))
-   
-   lena = min(lena, prec)
-   lenc = min(lenc, prec)
-
-   len = max(lenc, lena)
-   fit!(c, len)
-   for i = 1:lena
-      addeq!(c.coeffs[i], coeff(a, i - 1))
+   precc = precision(c)
+   preca = precision(a)
+   valc = valuation(c)
+   vala = valuation(a)
+   prec = min(precc + valc, preca + vala)
+   vala = min(vala, prec)
+   valc = min(valc, prec)
+   lena = min(lena, max(0, prec - vala))
+   lenc = min(lenc, max(0, prec - valc))
+   valr = min(vala, valc)
+   lenr = max(lena + vala, lenc + valc) - valr
+   R = base_ring(c)
+   fit!(c, lenr)
+   if valc > vala
+      for i = lena:-1:1
+         c.coeffs[i + valc - vala] = c.coeffs[i]
+      end
+      for i = 1:min(valc, lena)
+         c.coeffs[i] = a.coeffs[i]
+      end
+      for i = lena + 1:valc
+         c.coeffs[i] = R()
+      end
+      for i = valc + 1:min(lena, lenc + valc - vala)
+         addeq!(c.coeffs[i], a.coeffs[i])
+      end
+      for i = lenc + valc - vala + 1:lena
+         c.coeffs[i] = a.coeffs[i]
+      end
+   else
+      for i = 1:min(lena, lenc - vala + valc)
+         addeq!(c.coeffs[i + vala - valc], a.coeffs[i])
+      end
+      for i = lenc + 1:lena + vala - valc
+         c.coeffs[i] = a.coeffs[i - vala + valc]
+      end
    end
-   c.length = normalise(c, len)
+   c.length = normalise(c, lenr)
    c.prec = prec
+   c.val = valr
+   renormalise!(c)
 end
 
 ###############################################################################
@@ -1029,14 +1157,14 @@ function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::RingElem)
 end
 
 function Base.call{T <: RingElem}(a::GenRelSeriesRing{T})
-   z = GenRelSeries{T}(Array(T, 0), 0, a.prec_max, a.prec_max)
+   z = GenRelSeries{T}(Array(T, 0), 0, 0, a.prec_max)
    z.parent = a
    return z
 end
 
 function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::Integer)
    if b == 0
-      z = GenRelSeries{T}(Array(T, 0), 0, a.prec_max, a.prec_max)
+      z = GenRelSeries{T}(Array(T, 0), 0, 0, a.prec_max)
    else
       z = GenRelSeries{T}([base_ring(a)(b)], 1, a.prec_max, 0)
    end
@@ -1046,7 +1174,7 @@ end
 
 function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::fmpz)
    if b == 0
-      z = GenRelSeries{T}(Array(T, 0), 0, a.prec_max, a.prec_max)
+      z = GenRelSeries{T}(Array(T, 0), 0, 0, a.prec_max)
    else
       z = GenRelSeries{T}([base_ring(a)(b)], 1, a.prec_max, 0)
    end
@@ -1057,7 +1185,7 @@ end
 function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::T)
    parent(b) != base_ring(a) && error("Unable to coerce to power series")
    if b == 0
-      z = GenRelSeries{T}(Array(T, 0), 0, a.prec_max, a.prec_max)
+      z = GenRelSeries{T}(Array(T, 0), 0, 0, a.prec_max)
    else
       z = GenRelSeries{T}([b], 1, a.prec_max, 0)
    end

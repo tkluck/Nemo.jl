@@ -9,26 +9,26 @@ function test_rel_series_constructors()
    a = x^3 + 2x + 1
    b = (t^2 + 1)*x^2 + (t + 3)x + O(x^4)
 
-   @test isa(a, RelSeriesElem)
-   @test isa(b, RelSeriesElem)
+   @test isa(a, GenRelSeries)
+   @test isa(b, GenRelSeries)
 
    c = S(a)
-   d = S([t + 1, t, R(1)], 3, 5)
+   d = S([t + 1, t, R(1)], 3, 5, 0)
 
-   @test isa(c, RelSeriesElem)
-   @test isa(d, RelSeriesElem)
+   @test isa(c, GenRelSeries)
+   @test isa(d, GenRelSeries)
 
    g = S(1)
    h = S(fmpz(2))
    k = S()
 
-   @test isa(g, RelSeriesElem)
-   @test isa(h, RelSeriesElem)
-   @test isa(k, RelSeriesElem)
+   @test isa(g, GenRelSeries)
+   @test isa(h, GenRelSeries)
+   @test isa(k, GenRelSeries)
 
    l = S(t)
 
-   @test isa(l, RelSeriesElem)
+   @test isa(l, GenRelSeries)
 
    println("PASS")
 end
@@ -56,21 +56,21 @@ function test_rel_series_manipulation()
 
    @test valuation(b) == 4
 
-   @test precision(a) == 31
+   @test precision(a) == 30
 
-   @test precision(b) == 4
+   @test precision(b) == 0
 
    @test isequal(deepcopy(a), a)
 
    @test isequal(deepcopy(b), b)
 
-   @test length(a) == 4
+   @test length(a) == 3
 
    @test length(b) == 0
 
-   @test normalise(a, 4) == 4
+   @test normalise(a, 3) == 3
 
-   @test coeff(a, 1) == 2
+   @test coeff(a, 0) == 2
 
    @test coeff(b, 7) == 0
 
