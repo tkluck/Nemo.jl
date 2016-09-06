@@ -1,10 +1,10 @@
 ###############################################################################
 #
-#   RelSeries.jl : Power series over rings, capped relative precision
+#   AbsSeries.jl : Power series over rings, capped relative precision
 #
 ###############################################################################    
 
-export GenRelSeries, GenRelSeriesRing, PowerSeriesRing, O, valuation, exp,
+export GenAbsSeries, GenAbsSeriesRing, O, valuation, exp,
        precision, max_precision, set_prec!
 
 ###############################################################################
@@ -14,18 +14,21 @@ export GenRelSeries, GenRelSeriesRing, PowerSeriesRing, O, valuation, exp,
 ###############################################################################
 
 doc"""
-    O{T}(a::RelSeriesElem{T})
+    O{T}(a::AbsSeriesElem{T})
 > Returns $0 + O(x^\mbox{deg}(a))$. Usually this function is called with $x^n$
 > as parameter. Then the function returns the power series $0 + O(x^n)$, which
 > can be used to set the precision of a power series when constructing it.
 """
-function O{T}(a::RelSeriesElem{T})
+function O{T}(a::AbsSeriesElem{T})
+   if iszero(a)
+      return deepcopy(a)    # 0 + O(x^n)
+   end
    prec = length(a) - 1
    prec < 0 && throw(DomainError())
-   return parent(a)(Array(T, 0), 0, prec, prec)
+   return parent(a)(Array(T, 0), 0, prec)
 end
 
-parent_type{T}(::Type{GenRelSeries{T}}) = GenRelSeriesRing{T}
+parent_type{T}(::Type{GenAbsSeries{T}}) = GenAbsSeriesRing{T}
 
 doc"""
     parent(a::SeriesElem)
@@ -33,7 +36,7 @@ doc"""
 """
 parent(a::SeriesElem) = a.parent
 
-elem_type{T <: RingElem}(::GenRelSeriesRing{T}) = GenRelSeries{T}
+elem_type{T <: RingElem}(::GenAbsSeriesRing{T}) = GenAbsSeries{T}
 
 doc"""
     base_ring(R::SeriesRing)
@@ -74,18 +77,18 @@ function Base.hash(a::SeriesElem, h::UInt)
    return b
 end
 
-length(x::RelSeriesElem) = x.length
+length(x::AbsSeriesElem) = x.length
 
-precision(x::RelSeriesElem) = x.prec
+precision(x::AbsSeriesElem) = x.prec
 
 doc"""
     max_precision(R::SeriesRing)
-> Return the maximum relative precision of power series in the given power
+> Return the maximum absolute precision of power series in the given power
 > series ring.
 """
-max_precision(R::SeriesRing) = R.prec_max
+max_precision(R::GenAbsSeriesRing) = R.prec_max
 
-function normalise(a::GenRelSeries, len::Int)
+function normalise(a::GenAbsSeries, len::Int)
    while len > 0 && iszero(a.coeffs[len])
       len -= 1
    end
@@ -100,7 +103,7 @@ function set_prec!(a::SeriesElem, prec::Int)
    a.prec = prec
 end
 
-function coeff(a::GenRelSeries, n::Int)
+function coeff(a::GenAbsSeries, n::Int)
    n < 0  && throw(DomainError())
    return n >= length(a) ? zero(base_ring(a)) : a.coeffs[n + 1]
 end
@@ -120,13 +123,13 @@ doc"""
 one(R::SeriesRing) = R(1)
 
 doc"""
-    gen{T}(R::GenRelSeriesRing{T})
-> Return the generator of the power series ring, i.e. $x + O(x^{n + 1})$ where
-> $n$ is the maximum precision of the power series ring $R$.
+    gen{T}(R::GenAbsSeriesRing{T})
+> Return the generator of the power series ring, i.e. $x + O(x^n)$ where
+> $n$ is the precision of the power series ring $R$.
 """
-function gen{T}(R::GenRelSeriesRing{T})
+function gen{T}(R::GenAbsSeriesRing{T})
    S = base_ring(R)
-   return R([S(0), S(1)], 2, max_precision(R), 1)
+   return R([S(0), S(1)], 2, max_precision(R))
 end
 
 doc"""
@@ -137,39 +140,45 @@ doc"""
 iszero(a::SeriesElem) = length(a) == 0
 
 doc"""
-    isone(a::GenRelSeries)
+    isone(a::GenAbsSeries)
 > Return `true` if the given power series is arithmetically equal to one to
 > its current precision, otherwise return `false`.
 """
-function isone(a::GenRelSeries)
-   return (valuation(a) == 0 && length(a) == 1 && isone(coeff(a, 0))) ||
-           precision(a) == 0
+function isone(a::GenAbsSeries)
+   return (length(a) == 1 && isone(coeff(a, 0))) || precision(a) == 0
 end
 
 doc"""
-    isgen(a::GenRelSeries)
+    isgen(a::GenAbsSeries)
 > Return `true` if the given power series is arithmetically equal to the
 > generator of its power series ring to its current precision, otherwise return
 > `false`.
 """
-function isgen(a::GenRelSeries)
-   return (valuation(a) == 1 && length(a) == 1 && isone(coeff(a, 0))) || 
+function isgen(a::GenAbsSeries)
+   return (valuation(a) == 1 && length(a) == 2 && isone(coeff(a, 1))) || 
            precision(a) == 0
 end
 
 doc"""
-    isunit(a::RelSeriesElem)
+    isunit(a::AbsSeriesElem)
 > Return `true` if the given power series is arithmetically equal to a unit,
 > i.e. is invertible, otherwise return `false`.
 """
-isunit(a::RelSeriesElem) = valuation(a) == 0 && isunit(coeff(a, 0))
+isunit(a::AbsSeriesElem) = valuation(a) == 0 && isunit(coeff(a, 0))
 
 doc"""
-    valuation(a::RelSeriesElem)
+    valuation(a::AbsSeriesElem)
 > Return the valuation of the given power series, i.e. the degree of the first
 > nonzero term (or the precision if it is arithmetically zero).
 """
-valuation(a::RelSeriesElem) = a.val
+function valuation(a::AbsSeriesElem)
+   for i = 1:length(a)
+      if !iszero(coeff(a, i - 1))
+         return i - 1
+      end
+   end
+   return precision(a)
+end
 
 doc"""
     modulus{T <: ResElem}(a::SeriesElem{T})
@@ -177,12 +186,12 @@ doc"""
 """
 modulus{T <: ResElem}(a::SeriesElem{T}) = modulus(base_ring(a))
 
-function deepcopy{T <: RingElem}(a::GenRelSeries{T})
+function deepcopy{T <: RingElem}(a::GenAbsSeries{T})
    coeffs = Array(T, length(a))
    for i = 1:length(a)
       coeffs[i] = deepcopy(coeff(a, i - 1))
    end
-   return parent(a)(coeffs, length(a), precision(a), valuation(a))
+   return parent(a)(coeffs, length(a), precision(a))
 end
 
 ###############################################################################
@@ -191,7 +200,7 @@ end
 #
 ###############################################################################
 
-function show{T <: RingElem}(io::IO, x::GenRelSeries{T})
+function show{T <: RingElem}(io::IO, x::GenAbsSeries{T})
    len = length(x)
 
    if len == 0
@@ -200,31 +209,23 @@ function show{T <: RingElem}(io::IO, x::GenRelSeries{T})
       coeff_printed = false
       for i = 0:len - 1
          c = coeff(x, i)
-         bracket = needs_parentheses(c)
          if !iszero(c)
-            if coeff_printed && !is_negative(c)
+            if coeff_printed
                print(io, "+")
             end
-            if i + valuation(x) != 0
-               if !isone(c) && (c != -1 || show_minus_one(elem_type(base_ring(x))))
-                  if bracket
-                     print(io, "(")
-                  end
+            if i != 0
+               if !isone(c)
+                  print(io, "(")
                   print(io, c)
-                  if bracket
-                     print(io, ")")
-                  end
-                  if i + valuation(x) != 0
+                  print(io, ")")
+                  if i != 0
                      print(io, "*")
                   end
                end
-               if c == -1 && !show_minus_one(elem_type(base_ring(x)))
-                  print(io, "-")
-               end
                print(io, string(var(parent(x))))
-               if i + valuation(x) != 1
+               if i != 1
                   print(io, "^")
-                  print(io, valuation(x) + i)
+                  print(io, i)
                end
             else
                print(io, c)
@@ -233,7 +234,7 @@ function show{T <: RingElem}(io::IO, x::GenRelSeries{T})
          end
       end
    end
-   print(io, "+O(", string(var(parent(x))), "^", precision(x) + valuation(x), ")")
+   print(io, "+O(", string(var(parent(x))), "^", precision(x), ")")
 end
 
 function show{T <: RingElem}(io::IO, a::SeriesRing{T})
@@ -254,10 +255,10 @@ show_minus_one{T <: RingElem}(::Type{SeriesElem{T}}) = show_minus_one(T)
 ###############################################################################
 
 doc"""
-    -(a::RelSeriesElem)
+    -(a::AbsSeriesElem)
 > Return $-a$.
 """
-function -{T <: RingElem}(a::RelSeriesElem{T})
+function -{T <: RingElem}(a::AbsSeriesElem{T})
    len = length(a)
    z = parent(a)()
    set_prec!(z, precision(a))
@@ -275,10 +276,10 @@ end
 ###############################################################################
 
 doc"""
-    +{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
+    +{T <: RingElem}(a::AbsSeriesElem{T}, b::AbsSeriesElem{T})
 > Return $a + b$.
 """
-function +{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
+function +{T <: RingElem}(a::AbsSeriesElem{T}, b::AbsSeriesElem{T})
    check_parent(a, b)
    lena = length(a)
    lenb = length(b)
@@ -307,10 +308,10 @@ function +{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
 end
   
 doc"""
-    -{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
+    -{T <: RingElem}(a::AbsSeriesElem{T}, b::AbsSeriesElem{T})
 > Return $a - b$.
 """
-function -{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
+function -{T <: RingElem}(a::AbsSeriesElem{T}, b::AbsSeriesElem{T})
    check_parent(a, b)
    lena = length(a)
    lenb = length(b)
@@ -339,18 +340,24 @@ function -{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
 end
 
 doc"""
-    *{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
+    *{T <: RingElem}(a::AbsSeriesElem{T}, b::AbsSeriesElem{T})
 > Return $a\times b$.
 """
-function *{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
+function *{T <: RingElem}(a::AbsSeriesElem{T}, b::AbsSeriesElem{T})
    check_parent(a, b)
+
    lena = length(a)
    lenb = length(b)
+
    aval = valuation(a)
    bval = valuation(b)
+
    prec = min(precision(a) + bval, precision(b) + aval)
+   prec = min(prec, max_precision(parent(a)))
+
    lena = min(lena, prec)
    lenb = min(lenb, prec)
+
    if lena == 0 || lenb == 0
       return parent(a)(Array(T, 0), 0, prec)
    end
@@ -385,10 +392,10 @@ end
 ###############################################################################
 
 doc"""
-    *{T <: RingElem}(a::T, b::RelSeriesElem{T})
+    *{T <: RingElem}(a::T, b::AbsSeriesElem{T})
 > Return $a\times b$.
 """
-function *{T <: RingElem}(a::T, b::RelSeriesElem{T})
+function *{T <: RingElem}(a::T, b::AbsSeriesElem{T})
    len = length(b)
    z = parent(b)()
    fit!(z, len)
@@ -401,10 +408,10 @@ function *{T <: RingElem}(a::T, b::RelSeriesElem{T})
 end
 
 doc"""
-    *{T <: RingElem}(a::Integer, b::RelSeriesElem{T})
+    *{T <: RingElem}(a::Integer, b::AbsSeriesElem{T})
 > Return $a\times b$.
 """
-function *{T <: RingElem}(a::Integer, b::RelSeriesElem{T})
+function *{T <: RingElem}(a::Integer, b::AbsSeriesElem{T})
    len = length(b)
    z = parent(b)()
    fit!(z, len)
@@ -417,10 +424,10 @@ function *{T <: RingElem}(a::Integer, b::RelSeriesElem{T})
 end
 
 doc"""
-    *{T <: RingElem}(a::fmpz, b::RelSeriesElem{T})
+    *{T <: RingElem}(a::fmpz, b::AbsSeriesElem{T})
 > Return $a\times b$.
 """
-function *{T <: RingElem}(a::fmpz, b::RelSeriesElem{T})
+function *{T <: RingElem}(a::fmpz, b::AbsSeriesElem{T})
    len = length(b)
    z = parent(b)()
    fit!(z, len)
@@ -433,94 +440,94 @@ function *{T <: RingElem}(a::fmpz, b::RelSeriesElem{T})
 end
 
 doc"""
-    *{T <: RingElem}(a::RelSeriesElem{T}, b::T)
+    *{T <: RingElem}(a::AbsSeriesElem{T}, b::T)
 > Return $a\times b$.
 """
-*{T <: RingElem}(a::RelSeriesElem{T}, b::T) = b*a
+*{T <: RingElem}(a::AbsSeriesElem{T}, b::T) = b*a
 
 doc"""
-    *{T <: RingElem}(a::RelSeriesElem{T}, b::Integer)
+    *{T <: RingElem}(a::AbsSeriesElem{T}, b::Integer)
 > Return $a\times b$.
 """
-*(a::RelSeriesElem, b::Integer) = b*a
+*(a::AbsSeriesElem, b::Integer) = b*a
 
 doc"""
-    *{T <: RingElem}(a::RelSeriesElem{T}, b::fmpz)
+    *{T <: RingElem}(a::AbsSeriesElem{T}, b::fmpz)
 > Return $a\times b$.
 """
-*(a::RelSeriesElem, b::fmpz) = b*a
+*(a::AbsSeriesElem, b::fmpz) = b*a
 
 doc"""
-    +{T <: RingElem}(a::T, b::RelSeriesElem{T})
+    +{T <: RingElem}(a::T, b::AbsSeriesElem{T})
 > Return $a + b$.
 """
-+{T <: RingElem}(a::T, b::RelSeriesElem{T}) = parent(b)(a) + b
++{T <: RingElem}(a::T, b::AbsSeriesElem{T}) = parent(b)(a) + b
 
 doc"""
-    +(a::Integer, b::RelSeriesElem)
+    +(a::Integer, b::AbsSeriesElem)
 > Return $a + b$.
 """
-+(a::Integer, b::RelSeriesElem) = parent(b)(a) + b
++(a::Integer, b::AbsSeriesElem) = parent(b)(a) + b
 
 doc"""
-    +(a::fmpz, b::RelSeriesElem)
+    +(a::fmpz, b::AbsSeriesElem)
 > Return $a + b$.
 """
-+(a::fmpz, b::RelSeriesElem) = parent(b)(a) + b
++(a::fmpz, b::AbsSeriesElem) = parent(b)(a) + b
 
 doc"""
-    +{T <: RingElem}(a::RelSeriesElem{T}, b::T)
+    +{T <: RingElem}(a::AbsSeriesElem{T}, b::T)
 > Return $a + b$.
 """
-+{T <: RingElem}(a::RelSeriesElem{T}, b::T) = b + a
++{T <: RingElem}(a::AbsSeriesElem{T}, b::T) = b + a
 
 doc"""
-    +(a::RelSeriesElem, b::Integer)
+    +(a::AbsSeriesElem, b::Integer)
 > Return $a + b$.
 """
-+(a::RelSeriesElem, b::Integer) = b + a
++(a::AbsSeriesElem, b::Integer) = b + a
 
 doc"""
-    +(a::RelSeriesElem, b::fmpz)
+    +(a::AbsSeriesElem, b::fmpz)
 > Return $a + b$.
 """
-+(a::RelSeriesElem, b::fmpz) = b + a
++(a::AbsSeriesElem, b::fmpz) = b + a
 
 doc"""
-    -{T <: RingElem}(a::T, b::RelSeriesElem{T})
+    -{T <: RingElem}(a::T, b::AbsSeriesElem{T})
 > Return $a - b$.
 """
--{T <: RingElem}(a::T, b::RelSeriesElem{T}) = parent(b)(a) - b
+-{T <: RingElem}(a::T, b::AbsSeriesElem{T}) = parent(b)(a) - b
 
 doc"""
-    -(a::Integer, b::RelSeriesElem)
+    -(a::Integer, b::AbsSeriesElem)
 > Return $a - b$.
 """
--(a::Integer, b::RelSeriesElem) = parent(b)(a) - b
+-(a::Integer, b::AbsSeriesElem) = parent(b)(a) - b
 
 doc"""
-    -(a::fmpz, b::RelSeriesElem)
+    -(a::fmpz, b::AbsSeriesElem)
 > Return $a - b$.
 """
--(a::fmpz, b::RelSeriesElem) = parent(b)(a) - b
+-(a::fmpz, b::AbsSeriesElem) = parent(b)(a) - b
 
 doc"""
-    -{T <: RingElem}(a::RelSeriesElem{T}, b::T)
+    -{T <: RingElem}(a::AbsSeriesElem{T}, b::T)
 > Return $a - b$.
 """
--{T <: RingElem}(a::RelSeriesElem{T}, b::T) = a - parent(a)(b)
+-{T <: RingElem}(a::AbsSeriesElem{T}, b::T) = a - parent(a)(b)
 
 doc"""
-    -(a::RelSeriesElem, b::Integer)
+    -(a::AbsSeriesElem, b::Integer)
 > Return $a - b$.
 """
--(a::RelSeriesElem, b::Integer) = a - parent(a)(b)
+-(a::AbsSeriesElem, b::Integer) = a - parent(a)(b)
 
 doc"""
-    -(a::RelSeriesElem, b::fmpz)
+    -(a::AbsSeriesElem, b::fmpz)
 > Return $a - b$.
 """
--(a::RelSeriesElem, b::fmpz) = a - parent(a)(b)
+-(a::AbsSeriesElem, b::fmpz) = a - parent(a)(b)
 
 ###############################################################################
 #
@@ -529,36 +536,40 @@ doc"""
 ###############################################################################
 
 doc"""
-    shift_left(x::RelSeriesElem, n::Int)
+    shift_left(x::AbsSeriesElem, n::Int)
 > Return the power series $f$ shifted left by $n$ terms, i.e. multiplied by
 > $x^n$.
 """
-function shift_left{T <: RingElem}(x::RelSeriesElem{T}, len::Int)
+function shift_left{T <: RingElem}(x::AbsSeriesElem{T}, len::Int)
    len < 0 && throw(DomainError())
    xlen = length(x)
+   prec = precision(x) + len
+   prec = min(prec, max_precision(parent(x)))
    if xlen == 0
       z = zero(parent(x))
-      set_prec!(z, precision(x) + len)
+      set_prec!(z, prec)
       return z
    end
+   zlen = min(prec, xlen + len)
    z = parent(x)()
-   fit!(z, xlen + len)
-   set_prec!(z, precision(x) + len)
+   fit!(z, zlen)
+   set_prec!(z, prec)
    for i = 1:len
       setcoeff!(z, i - 1, zero(base_ring(x)))
    end
    for i = 1:xlen
       setcoeff!(z, i + len - 1, coeff(x, i - 1))
    end
+   set_length!(z, normalise(z, zlen))
    return z
 end
 
 doc"""
-    shift_right(f::RelSeriesElem, n::Int)
+    shift_right(f::AbsSeriesElem, n::Int)
 > Return the power series $f$ shifted right by $n$ terms, i.e. divided by
 > $x^n$.
 """
-function shift_right{T <: RingElem}(x::RelSeriesElem{T}, len::Int)
+function shift_right{T <: RingElem}(x::AbsSeriesElem{T}, len::Int)
    len < 0 && throw(DomainError())
    xlen = length(x)
    if len >= xlen
@@ -582,10 +593,10 @@ end
 ###############################################################################
 
 doc"""
-    truncate(a::RelSeriesElem, n::Int)
+    truncate(a::AbsSeriesElem, n::Int)
 > Return $a$ truncated to $n$ terms.
 """
-function truncate{T <: RingElem}(a::RelSeriesElem{T}, prec::Int)
+function truncate{T <: RingElem}(a::AbsSeriesElem{T}, prec::Int)
    prec < 0 && throw(DomainError())
    len = length(a)
    if precision(a) <= prec
@@ -611,25 +622,14 @@ end
 ###############################################################################
 
 doc"""
-    ^{T <: RingElem}(a::RelSeriesElem{T}, b::Int)
+    ^{T <: RingElem}(a::AbsSeriesElem{T}, b::Int)
 > Return $a^b$. We require $b \geq 0$.
 """
-function ^{T <: RingElem}(a::RelSeriesElem{T}, b::Int)
+function ^{T <: RingElem}(a::AbsSeriesElem{T}, b::Int)
    b < 0 && throw(DomainError())
    # special case powers of x for constructing power series efficiently
-   if isgen(a)
-      z = parent(a)()
-      fit!(z, b + 1)
-      set_prec!(z, precision(a) + b - 1)
-      setcoeff!(z, b, coeff(a, 1))
-      for i = 1:b
-         setcoeff!(z, i - 1, coeff(a, 0))
-      end
-      return z
-   elseif length(a) == 0
-      z = parent(a)()
-      set_prec!(z, precision(a) + (b - 1)*valuation(a))
-      return z
+   if precision(a) > 0 && isgen(a) && b > 0
+      return shift_left(a, b - 1)
    elseif length(a) == 1
       z = parent(a)(coeff(a, 0)^b)
       set_prec!(z, precision(a))
@@ -663,12 +663,12 @@ end
 ###############################################################################
 
 doc"""
-    =={T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
+    =={T <: RingElem}(x::AbsSeriesElem{T}, y::AbsSeriesElem{T})
 > Return `true` if $x == y$ arithmetically, otherwise return `false`. Recall
 > that power series to different precisions may still be arithmetically
 > equal to the minimum of the two precisions.
 """
-function =={T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
+function =={T <: RingElem}(x::AbsSeriesElem{T}, y::AbsSeriesElem{T})
    check_parent(x, y)
    prec = min(precision(x), precision(y))
    m1 = min(length(x), length(y))
@@ -697,12 +697,12 @@ function =={T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
 end
 
 doc"""
-    isequal{T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
+    isequal{T <: RingElem}(x::AbsSeriesElem{T}, y::AbsSeriesElem{T})
 > Return `true` if $x == y$ exactly, otherwise return `false`. Only if the
 > power series are precisely the same, to the same precision, are they declared
 > equal by this function.
 """
-function isequal{T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
+function isequal{T <: RingElem}(x::AbsSeriesElem{T}, y::AbsSeriesElem{T})
    if parent(x) != parent(y)
       return false
    end
@@ -724,43 +724,43 @@ end
 ###############################################################################
 
 doc"""
-    =={T <: RingElem}(x::RelSeriesElem{T}, y::T)
+    =={T <: RingElem}(x::AbsSeriesElem{T}, y::T)
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
-=={T <: RingElem}(x::RelSeriesElem{T}, y::T) = precision(x) == 0 ||
+=={T <: RingElem}(x::AbsSeriesElem{T}, y::T) = precision(x) == 0 ||
            ((length(x) == 0 && y == 0) || (length(x) == 1 && coeff(x, 0) == y))
 
 doc"""
-    =={T <: RingElem}(x::T, y::RelSeriesElem{T})
+    =={T <: RingElem}(x::T, y::AbsSeriesElem{T})
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
-=={T <: RingElem}(x::T, y::RelSeriesElem{T}) = y == x
+=={T <: RingElem}(x::T, y::AbsSeriesElem{T}) = y == x
 
 doc"""
-    ==(x::RelSeriesElem, y::Integer)
+    ==(x::AbsSeriesElem, y::Integer)
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
-==(x::RelSeriesElem, y::Integer) = precision(x) == 0 || ((length(x) == 0 && y == 0)
+==(x::AbsSeriesElem, y::Integer) = precision(x) == 0 || ((length(x) == 0 && y == 0)
                                        || (length(x) == 1 && coeff(x, 0) == y))
 
 doc"""
-    ==(x::RelSeriesElem, y::fmpz)
+    ==(x::AbsSeriesElem, y::fmpz)
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
-==(x::RelSeriesElem, y::fmpz) = precision(x) == 0 || ((length(x) == 0 && y == 0)
+==(x::AbsSeriesElem, y::fmpz) = precision(x) == 0 || ((length(x) == 0 && y == 0)
                                        || (length(x) == 1 && coeff(x, 0) == y))
 
 doc"""
-    ==(x::Integer, y::RelSeriesElem)
+    ==(x::Integer, y::AbsSeriesElem)
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
-==(x::Integer, y::RelSeriesElem) = y == x
+==(x::Integer, y::AbsSeriesElem) = y == x
 
 doc"""
-    ==(x::fmpz, y::RelSeriesElem)
+    ==(x::fmpz, y::AbsSeriesElem)
 > Return `true` if $x == y$ arithmetically, otherwise return `false`.
 """
-==(x::fmpz, y::RelSeriesElem) = y == x
+==(x::fmpz, y::AbsSeriesElem) = y == x
 
 ###############################################################################
 #
@@ -769,10 +769,10 @@ doc"""
 ###############################################################################
 
 doc"""
-    divexact{T <: RingElem}(a::RelSeriesElem{T}, b::RelSeriesElem{T})
+    divexact{T <: RingElem}(a::AbsSeriesElem{T}, b::AbsSeriesElem{T})
 > Return $a/b$. Requires $b$ to be invertible.
 """
-function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::RelSeriesElem{T})
+function divexact{T <: RingElem}(x::AbsSeriesElem{T}, y::AbsSeriesElem{T})
    check_parent(x, y)
    y == 0 && throw(DivideError())
    v2 = valuation(y)
@@ -794,10 +794,10 @@ end
 ###############################################################################
 
 doc"""
-    divexact{T <: RingElem}(a::RelSeriesElem{T}, b::Integer)
+    divexact{T <: RingElem}(a::AbsSeriesElem{T}, b::Integer)
 > Return $a/b$ where the quotient is expected to be exact.
 """
-function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::Integer)
+function divexact{T <: RingElem}(x::AbsSeriesElem{T}, y::Integer)
    y == 0 && throw(DivideError())
    lenx = length(x)
    z = parent(x)()
@@ -810,10 +810,10 @@ function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::Integer)
 end
 
 doc"""
-    divexact{T <: RingElem}(a::RelSeriesElem{T}, b::fmpz)
+    divexact{T <: RingElem}(a::AbsSeriesElem{T}, b::fmpz)
 > Return $a/b$ where the quotient is expected to be exact.
 """
-function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::fmpz)
+function divexact{T <: RingElem}(x::AbsSeriesElem{T}, y::fmpz)
    y == 0 && throw(DivideError())
    lenx = length(x)
    z = parent(x)()
@@ -826,10 +826,10 @@ function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::fmpz)
 end
 
 doc"""
-    divexact{T <: RingElem}(a::RelSeriesElem{T}, b::T)
+    divexact{T <: RingElem}(a::AbsSeriesElem{T}, b::T)
 > Return $a/b$ where the quotient is expected to be exact.
 """
-function divexact{T <: RingElem}(x::RelSeriesElem{T}, y::T)
+function divexact{T <: RingElem}(x::AbsSeriesElem{T}, y::T)
    y == 0 && throw(DivideError())
    lenx = length(x)
    z = parent(x)()
@@ -848,10 +848,10 @@ end
 ###############################################################################
 
 doc"""
-   inv(a::RelSeriesElem)
+   inv(a::AbsSeriesElem)
 > Return the inverse of the power series $a$, i.e. $1/a$.
 """
-function inv(a::RelSeriesElem)
+function inv(a::AbsSeriesElem)
    a == 0 && throw(DivideError())
    !isunit(a) && error("Unable to invert power series")
    a1 = coeff(a, 0)
@@ -880,10 +880,10 @@ end
 ###############################################################################
 
 doc"""
-    exp(a::RelSeriesElem)
+    exp(a::AbsSeriesElem)
 > Return the exponential of the power series $a$.
 """
-function exp(a::RelSeriesElem)
+function exp(a::AbsSeriesElem)
    if a == 0
       z = one(parent(a))
       set_prec!(z, precision(a))
@@ -912,7 +912,7 @@ end
 #
 ###############################################################################
 
-function fit!{T <: RingElem}(c::GenRelSeries{T}, n::Int)
+function fit!{T <: RingElem}(c::GenAbsSeries{T}, n::Int)
    if length(c.coeffs) < n
       t = c.coeffs
       c.coeffs = Array(T, n)
@@ -925,7 +925,7 @@ function fit!{T <: RingElem}(c::GenRelSeries{T}, n::Int)
    end
 end
 
-function setcoeff!{T <: RingElem}(c::GenRelSeries{T}, n::Int, a::T)
+function setcoeff!{T <: RingElem}(c::GenAbsSeries{T}, n::Int, a::T)
    if (a != 0 && precision(c) > n) || n + 1 <= c.length
       fit!(c, n + 1)
       c.coeffs[n + 1] = a
@@ -934,7 +934,7 @@ function setcoeff!{T <: RingElem}(c::GenRelSeries{T}, n::Int, a::T)
    end
 end
 
-function mul!{T <: RingElem}(c::GenRelSeries{T}, a::GenRelSeries{T}, b::GenRelSeries{T})
+function mul!{T <: RingElem}(c::GenAbsSeries{T}, a::GenAbsSeries{T}, b::GenAbsSeries{T})
    lena = length(a)
    lenb = length(b)
 
@@ -942,10 +942,11 @@ function mul!{T <: RingElem}(c::GenRelSeries{T}, a::GenRelSeries{T}, b::GenRelSe
    bval = valuation(b)
 
    prec = min(precision(a) + bval, precision(b) + aval)
-   
+   prec = min(prec, max_precision(parent(c)))
+
    lena = min(lena, prec)
    lenb = min(lenb, prec)
-   
+
    if lena == 0 || lenb == 0
       c.length = 0
    else
@@ -978,7 +979,7 @@ function mul!{T <: RingElem}(c::GenRelSeries{T}, a::GenRelSeries{T}, b::GenRelSe
    c.prec = prec
 end
 
-function addeq!{T <: RingElem}(c::GenRelSeries{T}, a::GenRelSeries{T})
+function addeq!{T <: RingElem}(c::GenAbsSeries{T}, a::GenAbsSeries{T})
    lenc = length(c)
    lena = length(a)
    
@@ -1002,20 +1003,20 @@ end
 #
 ###############################################################################
 
-function Base.promote_rule{T <: RingElem, V <: Integer}(::Type{GenRelSeries{T}}, ::Type{V})
-   return GenRelSeries{T}
+function Base.promote_rule{T <: RingElem, V <: Integer}(::Type{GenAbsSeries{T}}, ::Type{V})
+   return GenAbsSeries{T}
 end
 
-function Base.promote_rule{T <: RingElem}(::Type{GenRelSeries{T}}, ::Type{T})
-   return GenRelSeries{T}
+function Base.promote_rule{T <: RingElem}(::Type{GenAbsSeries{T}}, ::Type{T})
+   return GenAbsSeries{T}
 end
 
-function promote_rule1{T <: RingElem, U <: RingElem}(::Type{GenRelSeries{T}}, ::Type{GenRelSeries{U}})
-   Base.promote_rule(T, GenRelSeries{U}) == T ? GenRelSeries{T} : Union{}
+function promote_rule1{T <: RingElem, U <: RingElem}(::Type{GenAbsSeries{T}}, ::Type{GenAbsSeries{U}})
+   Base.promote_rule(T, GenAbsSeries{U}) == T ? GenAbsSeries{T} : Union{}
 end
 
-function Base.promote_rule{T <: RingElem, U <: RingElem}(::Type{GenRelSeries{T}}, ::Type{U})
-   Base.promote_rule(T, U) == T ? GenRelSeries{T} : promote_rule1(U, GenRelSeries{T})
+function Base.promote_rule{T <: RingElem, U <: RingElem}(::Type{GenAbsSeries{T}}, ::Type{U})
+   Base.promote_rule(T, U) == T ? GenAbsSeries{T} : promote_rule1(U, GenAbsSeries{T})
 end
 
 ###############################################################################
@@ -1024,57 +1025,57 @@ end
 #
 ###############################################################################
 
-function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::RingElem)
+function Base.call{T <: RingElem}(a::GenAbsSeriesRing{T}, b::RingElem)
    return a(base_ring(a)(b))
 end
 
-function Base.call{T <: RingElem}(a::GenRelSeriesRing{T})
-   z = GenRelSeries{T}(Array(T, 0), 0, a.prec_max, a.prec_max)
+function Base.call{T <: RingElem}(a::GenAbsSeriesRing{T})
+   z = GenAbsSeries{T}(Array(T, 0), 0, a.prec_max)
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::Integer)
+function Base.call{T <: RingElem}(a::GenAbsSeriesRing{T}, b::Integer)
    if b == 0
-      z = GenRelSeries{T}(Array(T, 0), 0, a.prec_max, a.prec_max)
+      z = GenAbsSeries{T}(Array(T, 0), 0, a.prec_max)
    else
-      z = GenRelSeries{T}([base_ring(a)(b)], 1, a.prec_max, 0)
+      z = GenAbsSeries{T}([base_ring(a)(b)], 1, a.prec_max)
    end
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::fmpz)
+function Base.call{T <: RingElem}(a::GenAbsSeriesRing{T}, b::fmpz)
    if b == 0
-      z = GenRelSeries{T}(Array(T, 0), 0, a.prec_max, a.prec_max)
+      z = GenAbsSeries{T}(Array(T, 0), 0, a.prec_max)
    else
-      z = GenRelSeries{T}([base_ring(a)(b)], 1, a.prec_max, 0)
+      z = GenAbsSeries{T}([base_ring(a)(b)], 1, a.prec_max)
    end
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::T)
+function Base.call{T <: RingElem}(a::GenAbsSeriesRing{T}, b::T)
    parent(b) != base_ring(a) && error("Unable to coerce to power series")
    if b == 0
-      z = GenRelSeries{T}(Array(T, 0), 0, a.prec_max, a.prec_max)
+      z = GenAbsSeries{T}(Array(T, 0), 0, a.prec_max)
    else
-      z = GenRelSeries{T}([b], 1, a.prec_max, 0)
+      z = GenAbsSeries{T}([b], 1, a.prec_max)
    end
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::RelSeriesElem{T})
+function Base.call{T <: RingElem}(a::GenAbsSeriesRing{T}, b::AbsSeriesElem{T})
    parent(b) != a && error("Unable to coerce power series")
    return b
 end
 
-function Base.call{T <: RingElem}(a::GenRelSeriesRing{T}, b::Array{T, 1}, len::Int, prec::Int, val::Int)
+function Base.call{T <: RingElem}(a::GenAbsSeriesRing{T}, b::Array{T, 1}, len::Int, prec::Int)
    if length(b) > 0
       parent(b[1]) != base_ring(a) && error("Unable to coerce to power series")
    end
-   z = GenRelSeries{T}(b, len, prec, val)
+   z = GenAbsSeries{T}(b, len, prec)
    z.parent = a
    return z
 end
@@ -1110,3 +1111,4 @@ function PowerSeriesRing(R::Ring, prec::Int, s::AbstractString{}; cached=true, m
 
    return parent_obj, gen(parent_obj)
 end
+

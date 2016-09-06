@@ -872,7 +872,7 @@ end
 #
 ###############################################################################
 
-const FmpzSeriesID = ObjectIdDict()
+const FmpzRelSeriesID = ObjectIdDict()
 
 type FmpzRelSeriesRing <: SeriesRing{fmpz}
    base_ring::FlintIntegerRing
@@ -881,10 +881,10 @@ type FmpzRelSeriesRing <: SeriesRing{fmpz}
 
    function FmpzRelSeriesRing(prec::Int, s::Symbol)
       if haskey(FmpzSeriesID, (prec, s))
-         FmpzSeriesID[prec, s]::FmpzRelSeriesRing
+         FmpzRelSeriesID[prec, s]::FmpzRelSeriesRing
       else
          z = new(FlintZZ, prec, s)
-         FmpzSeriesID[prec, s] = z
+         FmpzRelSeriesID[prec, s] = z
          return z
       end
    end
@@ -934,11 +934,77 @@ end
 
 ###############################################################################
 #
+#   FmpzAbsSeriesRing / fmpz_abs_series
+#
+###############################################################################
+
+const FmpzAbsSeriesID = ObjectIdDict()
+
+type FmpzAbsSeriesRing <: SeriesRing{fmpz}
+   base_ring::FlintIntegerRing
+   prec_max::Int
+   S::Symbol
+
+   function FmpzAbsSeriesRing(prec::Int, s::Symbol)
+      if haskey(FmpzAbsSeriesID, (prec, s))
+         FmpzAbsSeriesID[prec, s]::FmpzAbsSeriesRing
+      else
+         z = new(FlintZZ, prec, s)
+         FmpzAbsSeriesID[prec, s] = z
+         return z
+      end
+   end
+end
+
+type fmpz_abs_series <: SeriesElem{fmpz}
+   coeffs::Ptr{Void}
+   alloc::Int
+   length::Int
+   prec :: Int
+   parent::FmpzAbsSeriesRing
+
+   function fmpz_abs_series()
+      z = new()
+      ccall((:fmpz_poly_init, :libflint), Void, 
+            (Ptr{fmpz_abs_series},), &z)
+      finalizer(z, _fmpz_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpz_abs_series(a::Array{fmpz, 1}, len::Int, prec::Int)
+      z = new()
+      ccall((:fmpz_poly_init2, :libflint), Void, 
+            (Ptr{fmpz_abs_series}, Int), &z, len)
+      for i = 1:len
+         ccall((:fmpz_poly_set_coeff_fmpz, :libflint), Void, 
+                     (Ptr{fmpz_abs_series}, Int, Ptr{fmpz}), &z, i - 1, &a[i])
+      end
+      z.prec = prec
+      finalizer(z, _fmpz_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpz_abs_series(a::fmpz_abs_series)
+      z = new()
+      ccall((:fmpz_poly_init, :libflint), Void, (Ptr{fmpz_abs_series},), &z)
+      ccall((:fmpz_poly_set, :libflint), Void, 
+            (Ptr{fmpz_abs_series}, Ptr{fmpz_abs_series}), &z, &a)
+      finalizer(z, _fmpz_abs_series_clear_fn)
+      return z
+   end
+end
+
+function _fmpz_abs_series_clear_fn(a::fmpz_abs_series)
+   ccall((:fmpz_poly_clear, :libflint), Void, (Ptr{fmpz_abs_series},), &a)
+end
+
+###############################################################################
+#
 #   FmpqRelSeriesRing / fmpq_rel_series
 #
 ###############################################################################
 
-const FmpqSeriesID = ObjectIdDict()
+const FmpqRelSeriesID = ObjectIdDict()
 
 type FmpqRelSeriesRing <: SeriesRing{fmpq}
    base_ring::FlintRationalField
@@ -946,11 +1012,11 @@ type FmpqRelSeriesRing <: SeriesRing{fmpq}
    S::Symbol
 
    function FmpqRelSeriesRing(prec::Int, s::Symbol)
-      if haskey(FmpqSeriesID, (prec, s))
-         return FmpqSeriesID[prec, s]::FmpqRelSeriesRing
+      if haskey(FmpqRelSeriesID, (prec, s))
+         return FmpqRelSeriesID[prec, s]::FmpqRelSeriesRing
       else
          z = new(FlintQQ, prec, s)
-         FmpqSeriesID[prec, s] = z
+         FmpqRelSeriesID[prec, s] = z
          return z
       end
    end
@@ -997,6 +1063,73 @@ end
 
 function _fmpq_rel_series_clear_fn(a::fmpq_rel_series)
    ccall((:fmpq_poly_clear, :libflint), Void, (Ptr{fmpq_rel_series},), &a)
+end
+
+###############################################################################
+#
+#   FmpqAbsSeriesRing / fmpq_abs_series
+#
+###############################################################################
+
+const FmpqAbsSeriesID = ObjectIdDict()
+
+type FmpqAbsSeriesRing <: SeriesRing{fmpq}
+   base_ring::FlintRationalField
+   prec_max::Int
+   S::Symbol
+
+   function FmpqAbsSeriesRing(prec::Int, s::Symbol)
+      if haskey(FmpqAbsSeriesID, (prec, s))
+         return FmpqAbsSeriesID[prec, s]::FmpqAbsSeriesRing
+      else
+         z = new(FlintQQ, prec, s)
+         FmpqAbsSeriesID[prec, s] = z
+         return z
+      end
+   end
+end
+
+type fmpq_abs_series <: SeriesElem{fmpq}
+   coeffs::Ptr{Void}
+   den::Int
+   alloc::Int
+   length::Int
+   prec :: Int
+   parent::FmpqAbsSeriesRing
+
+   function fmpq_abs_series()
+      z = new()
+      ccall((:fmpq_poly_init, :libflint), Void, 
+            (Ptr{fmpq_abs_series},), &z)
+      finalizer(z, _fmpq_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpq_abs_series(a::Array{fmpq, 1}, len::Int, prec::Int)
+      z = new()
+      ccall((:fmpq_poly_init2, :libflint), Void, 
+            (Ptr{fmpq_abs_series}, Int), &z, len)
+      for i = 1:len
+         ccall((:fmpq_poly_set_coeff_fmpq, :libflint), Void, 
+                     (Ptr{fmpq_abs_series}, Int, Ptr{fmpq}), &z, i - 1, &a[i])
+      end
+      z.prec = prec
+      finalizer(z, _fmpq_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpq_abs_series(a::fmpq_abs_series)
+      z = new()
+      ccall((:fmpq_poly_init, :libflint), Void, (Ptr{fmpq_abs_series},), &z)
+      ccall((:fmpq_poly_set, :libflint), Void, 
+            (Ptr{fmpq_abs_series}, Ptr{fmpq_abs_series}), &z, &a)
+      finalizer(z, _fmpq_abs_series_clear_fn)
+      return z
+   end
+end
+
+function _fmpq_abs_series_clear_fn(a::fmpq_abs_series)
+   ccall((:fmpq_poly_clear, :libflint), Void, (Ptr{fmpq_abs_series},), &a)
 end
 
 ###############################################################################

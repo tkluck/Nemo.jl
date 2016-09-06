@@ -24,7 +24,7 @@ export ball, radius, midpoint, contains, contains_zero,
        atanh, asinh, acosh, gamma, lgamma, rgamma, digamma, zeta,
        sincos, sincospi, sinhcosh, atan2,
        agm, fac, binom, fib, bernoulli, risingfac, risingfac2, polylog,
-       chebyshev_t, chebyshev_t2, chebyshev_u, chebyshev_u2, bell
+       chebyshev_t, chebyshev_t2, chebyshev_u, chebyshev_u2, bell, numpart
 
 ###############################################################################
 #
@@ -118,6 +118,8 @@ function show(io::IO, x::arb)
   print(io, bytestring(cstr))
   ccall((:flint_free, :libflint), Void, (Ptr{UInt8},), cstr)
 end
+
+needs_parentheses(x::arb) = false
 
 ################################################################################
 #
@@ -344,6 +346,10 @@ end
 #
 ################################################################################
 
+function isunit(x::arb)
+   !iszero(x)
+end
+
 doc"""
     iszero(x::arb)
 > Return `true` if $x$ is certainly zero, otherwise return `false`.
@@ -427,6 +433,8 @@ doc"""
 function isnonpositive(x::arb)
    return Bool(ccall((:arb_is_nonpositive, :libarb), Cint, (Ptr{arb},), &x))
 end
+
+is_negative(x::arb) = isnegative(x)
 
 ################################################################################
 #
@@ -673,6 +681,34 @@ function ^(x::arb, y::fmpq)
               &z, &x, &y, parent(x).prec)
   return z
 end
+
++(x::fmpq, y::arb) = parent(y)(x) + y
++(x::arb, y::fmpq) = x + parent(x)(y)
+-(x::fmpq, y::arb) = parent(y)(x) - y
+-(x::arb, y::fmpq) = x - parent(x)(y)
+*(x::fmpq, y::arb) = parent(y)(x) * y
+*(x::arb, y::fmpq) = x * parent(x)(y)
+^(x::fmpq, y::arb) = parent(y)(x) ^ y
+
+/(x::arb, y::arb) = x // y
+/(x::fmpz, y::arb) = x // y
+/(x::arb, y::fmpz) = x // y
+/(x::Int, y::arb) = x // y
+/(x::arb, y::Int) = x // y
+/(x::UInt, y::arb) = x // y
+/(x::arb, y::UInt) = x // y
+/(x::fmpq, y::arb) = x // y
+/(x::arb, y::fmpq) = x // y
+
+divexact(x::arb, y::arb) = x // y
+divexact(x::fmpz, y::arb) = x // y
+divexact(x::arb, y::fmpz) = x // y
+divexact(x::Int, y::arb) = x // y
+divexact(x::arb, y::Int) = x // y
+divexact(x::UInt, y::arb) = x // y
+divexact(x::arb, y::UInt) = x // y
+divexact(x::fmpq, y::arb) = x // y
+divexact(x::arb, y::fmpq) = x // y
 
 ################################################################################
 #
@@ -1571,6 +1607,23 @@ doc"""
 > Return the Bell number $B_n$ as an element of $r$.
 """
 bell(n::Int, r::ArbField) = bell(fmpz(n), r)
+
+doc"""
+    numpart(n::fmpz, r::ArbField)
+> Return the number of partitions $p(n)$ as an element of $r$.
+"""
+function numpart(n::fmpz, r::ArbField)
+  z = r()
+  ccall((:arb_partitions_fmpz, :libarb), Void,
+              (Ptr{arb}, Ptr{fmpz}, Int), &z, &n, r.prec)
+  return z
+end
+
+doc"""
+    numpart(n::fmpz, r::ArbField)
+> Return the number of partitions $p(n)$ as an element of $r$.
+"""
+numpart(n::Int, r::ArbField) = numpart(fmpz(n), r)
 
 ################################################################################
 #
