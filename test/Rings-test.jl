@@ -31,7 +31,6 @@ include("generic/AbsSeries-test.jl")
 include("generic/Matrix-test.jl")
 
 function test_rings()
-   test_gen_rel_series() # remove and reinsert below
    test_fmpz()
    test_fmpz_poly()
    test_fmpz_mod_poly()
@@ -54,7 +53,7 @@ function test_rings()
    test_gen_poly()
    test_gen_res()
    test_gen_abs_series()
-   #test_gen_rel_series()
+   test_gen_rel_series()
    test_gen_mat()
    
    test_nmod_mat()

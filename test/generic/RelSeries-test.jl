@@ -64,13 +64,9 @@ function test_rel_series_manipulation()
 
    @test isequal(deepcopy(b), b)
 
-   @test length(a) == 3
-
-   @test length(b) == 0
-
    @test normalise(a, 3) == 3
 
-   @test coeff(a, 0) == 2
+   @test coeff(a, 1) == 2
 
    @test coeff(b, 7) == 0
 
