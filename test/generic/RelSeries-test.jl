@@ -56,9 +56,9 @@ function test_rel_series_manipulation()
 
    @test valuation(b) == 4
 
-   @test precision(a) == 30
+   @test precision(a) == 31
 
-   @test precision(b) == 0
+   @test precision(b) == 4
 
    @test isequal(deepcopy(a), a)
 
