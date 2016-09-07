@@ -1024,12 +1024,13 @@ type FmpqRelSeriesRing <: SeriesRing{fmpq}
    end
 end
 
-type fmpq_rel_series <: SeriesElem{fmpq}
+type fmpq_rel_series <: RelSeriesElem{fmpq}
    coeffs::Ptr{Void}
    den::Int
    alloc::Int
    length::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FmpqRelSeriesRing
 
    function fmpq_rel_series()
@@ -1040,7 +1041,7 @@ type fmpq_rel_series <: SeriesElem{fmpq}
       return z
    end
    
-   function fmpq_rel_series(a::Array{fmpq, 1}, len::Int, prec::Int)
+   function fmpq_rel_series(a::Array{fmpq, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpq_poly_init2, :libflint), Void, 
             (Ptr{fmpq_rel_series}, Int), &z, len)
@@ -1049,6 +1050,7 @@ type fmpq_rel_series <: SeriesElem{fmpq}
                      (Ptr{fmpq_rel_series}, Int, Ptr{fmpq}), &z, i - 1, &a[i])
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fmpq_rel_series_clear_fn)
       return z
    end

@@ -146,8 +146,8 @@ function +(a::fmpz_rel_series, b::fmpz_rel_series)
    lenb = pol_length(b)
    prec = min(a.prec, b.prec)
    val = min(a.val, b.val)
-   lena = min(lena, prec - val)
-   lenb = min(lenb, prec - val)
+   lena = min(lena, prec - a.val)
+   lenb = min(lenb, prec - b.val)
    z = parent(a)()
    if a.val < b.val
       lenz = max(lena, lenb + b.val - a.val)
@@ -187,13 +187,10 @@ function -(a::fmpz_rel_series, b::fmpz_rel_series)
    check_parent(a, b)
    lena = pol_length(a)
    lenb = pol_length(b)
-         
    prec = min(a.prec, b.prec)
    val = min(a.val, b.val)
-
-   lena = min(lena, prec - val)
-   lenb = min(lenb, prec - val)
-
+   lena = min(lena, prec - a.val)
+   lenb = min(lenb, prec - b.val)
    lenz = max(lena, lenb)
    z = parent(a)()
    if a.val < b.val
@@ -236,30 +233,22 @@ function *(a::fmpz_rel_series, b::fmpz_rel_series)
    check_parent(a, b)
    lena = pol_length(a)
    lenb = pol_length(b)
-   
    aval = valuation(a)
    bval = valuation(b)
-
-   prec = min(a.prec, b.prec)
-   
+   prec = min(a.prec - aval, b.prec - bval)
    lena = min(lena, prec)
    lenb = min(lenb, prec)
-   
    z = parent(a)()
-   z.prec = prec
-      
    if lena == 0 || lenb == 0
       return z
    end
-
+   z.val = a.val + b.val
+   z.prec = prec + z.val
    lenz = min(lena + lenb - 1, prec)
-
    ccall((:fmpz_poly_mullow, :libflint), Void, 
                 (Ptr{fmpz_rel_series}, Ptr{fmpz_rel_series}, Ptr{fmpz_rel_series}, Int), 
                &z, &a, &b, lenz)
 
-   z.val = a.val + b.val
-   z.prec = prec
    return z
 end
 
@@ -558,6 +547,8 @@ function mul!(z::fmpz_rel_series, a::fmpz_rel_series, b::fmpz_rel_series)
    prec = min(a.prec - aval, b.prec - bval)
    lena = min(lena, prec)
    lenb = min(lenb, prec)
+   z.val = a.val + b.val
+   z.prec = prec + c.val
    lenz = min(lena + lenb - 1, prec)
    if lena <= 0 || lenb <= 0
       lenz = 0
@@ -565,8 +556,6 @@ function mul!(z::fmpz_rel_series, a::fmpz_rel_series, b::fmpz_rel_series)
    ccall((:fmpz_poly_mullow, :libflint), Void, 
                 (Ptr{fmpz_rel_series}, Ptr{fmpz_rel_series}, Ptr{fmpz_rel_series}, Int), 
                &z, &a, &b, lenz)
-   z.val = a.val + b.val
-   z.prec = prec + c.val
    return nothing
 end
 
@@ -575,9 +564,8 @@ function addeq!(a::fmpz_rel_series, b::fmpz_rel_series)
    lenb = pol_length(b)  
    prec = min(a.prec, b.prec)
    val = min(a.val, b.val)
-   lena = min(lena, prec - val)
-   lenb = min(lenb, prec - val)
-   lenz = max(lena, lenb)
+   lena = min(lena, prec - a.val)
+   lenb = min(lenb, prec - b.val)
    if a.val < b.val
       z = fmpz_rel_series()
       lenz = max(lena, lenb + b.val - a.val)
