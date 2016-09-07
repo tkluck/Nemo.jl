@@ -880,7 +880,7 @@ type FmpzRelSeriesRing <: SeriesRing{fmpz}
    S::Symbol
 
    function FmpzRelSeriesRing(prec::Int, s::Symbol)
-      if haskey(FmpzSeriesID, (prec, s))
+      if haskey(FmpzRelSeriesID, (prec, s))
          FmpzRelSeriesID[prec, s]::FmpzRelSeriesRing
       else
          z = new(FlintZZ, prec, s)
@@ -890,11 +890,12 @@ type FmpzRelSeriesRing <: SeriesRing{fmpz}
    end
 end
 
-type fmpz_rel_series <: SeriesElem{fmpz}
+type fmpz_rel_series <: RelSeriesElem{fmpz}
    coeffs::Ptr{Void}
    alloc::Int
    length::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FmpzRelSeriesRing
 
    function fmpz_rel_series()
@@ -905,7 +906,7 @@ type fmpz_rel_series <: SeriesElem{fmpz}
       return z
    end
    
-   function fmpz_rel_series(a::Array{fmpz, 1}, len::Int, prec::Int)
+   function fmpz_rel_series(a::Array{fmpz, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpz_poly_init2, :libflint), Void, 
             (Ptr{fmpz_rel_series}, Int), &z, len)
@@ -914,6 +915,7 @@ type fmpz_rel_series <: SeriesElem{fmpz}
                      (Ptr{fmpz_rel_series}, Int, Ptr{fmpz}), &z, i - 1, &a[i])
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fmpz_rel_series_clear_fn)
       return z
    end

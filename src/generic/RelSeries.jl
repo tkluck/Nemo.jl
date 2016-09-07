@@ -109,7 +109,7 @@ function polcoeff(a::GenRelSeries, n::Int)
    return n >= pol_length(a) ? zero(base_ring(a)) : a.coeffs[n + 1]
 end
 
-function coeff(a::GenRelSeries, n::Int)
+function coeff(a::RelSeriesElem, n::Int)
    if n < valuation(a)
       return base_ring(a)()
    else
@@ -142,18 +142,18 @@ function gen{T}(R::GenRelSeriesRing{T})
 end
 
 doc"""
-    iszero(a::SeriesElem)
+    iszero(a::RelSeriesElem)
 > Return `true` if the given power series is arithmetically equal to zero to
 > its current precision, otherwise return `false`.
 """
-iszero(a::GenRelSeries) = pol_length(a) == 0
+iszero(a::RelSeriesElem) = pol_length(a) == 0
 
 doc"""
-    isone(a::GenRelSeries)
+    isone(a::RelSeriesElem)
 > Return `true` if the given power series is arithmetically equal to one to
 > its current precision, otherwise return `false`.
 """
-function isone(a::GenRelSeries)
+function isone(a::RelSeriesElem)
    return valuation(a) == 0 && pol_length(a) == 1 && isone(polcoeff(a, 0))
 end
 
@@ -163,7 +163,7 @@ doc"""
 > generator of its power series ring to its current precision, otherwise return
 > `false`.
 """
-function isgen(a::GenRelSeries)
+function isgen(a::RelSeriesElem)
    return valuation(a) == 1 && pol_length(a) == 1 && isone(polcoeff(a, 0))
 end
 
@@ -223,9 +223,8 @@ end
 #
 ###############################################################################
 
-function show{T <: RingElem}(io::IO, x::GenRelSeries{T})
+function show{T <: RingElem}(io::IO, x::RelSeriesElem{T})
    len = pol_length(x)
-
    if len == 0
       print(io, zero(base_ring(x)))
    else
@@ -651,12 +650,11 @@ function shift_right{T <: RingElem}(x::RelSeriesElem{T}, len::Int)
    xlen = pol_length(x)
    xval = valuation(x)
    xprec = precision(x)
+   z = parent(x)()
    if len >= xlen + xval
-      z = zero(parent(x))
       set_prec!(z, max(0, xprec - len))
       set_val!(z, max(0, xprec - len))
    else
-      z = parent(x)()
       zlen = min(xlen + xval - len, xlen)
       fit!(z, zlen)
       set_prec!(z, max(0, xprec - len))
@@ -687,21 +685,19 @@ function truncate{T <: RingElem}(a::RelSeriesElem{T}, prec::Int)
    if aprec + aval <= prec
       return a
    end
-   if prec <= aval
-      z = parent(a)()
-      set_length!(z, 0)
-      set_prec!(z, prec)
-      set_val!(z, prec)
-      return z
-   end
    z = parent(a)()
-   fit!(z, prec - aval)
    set_prec!(z, prec)
-   for i = 1:min(prec - aval, alen)
-      setcoeff!(z, i - 1, polcoeff(a, i - 1))
+   if prec <= aval
+      set_length!(z, 0)
+      set_val!(z, prec)
+   else
+      fit!(z, prec - aval)
+      for i = 1:min(prec - aval, alen)
+         setcoeff!(z, i - 1, polcoeff(a, i - 1))
+      end
+      set_length!(z, normalise(z, prec - aval))
+      set_val!(z, aval)
    end
-   set_length!(z, normalise(z, prec - aval))
-   set_val!(z, aval)
    return z
 end
 
@@ -1054,10 +1050,10 @@ function mul!{T <: RingElem}(c::GenRelSeries{T}, a::GenRelSeries{T}, b::GenRelSe
    lenb = pol_length(b)
    aval = valuation(a)
    bval = valuation(b)
-   prec = min(precision(a), precision(b))
-   lena = min(lena, prec - aval)
-   lenb = min(lenb, prec - bval)
-   if lena == 0 || lenb == 0
+   prec = min(precision(a) - aval, precision(b) - bval)
+   lena = min(lena, prec)
+   lenb = min(lenb, prec)
+   if lena <= 0 || lenb <= 0
       c.length = 0
    else
       t = base_ring(a)()
