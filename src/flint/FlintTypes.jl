@@ -1244,11 +1244,12 @@ type FqRelSeriesRing <: SeriesRing{fq}
    end
 end
 
-type fq_rel_series <: SeriesElem{fq}
+type fq_rel_series <: RelSeriesElem{fq}
    coeffs::Ptr{Void}
    alloc::Int
    length::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FqRelSeriesRing
 
    function fq_rel_series(ctx::FqFiniteField)
@@ -1259,7 +1260,7 @@ type fq_rel_series <: SeriesElem{fq}
       return z
    end
    
-   function fq_rel_series(ctx::FqFiniteField, a::Array{fq, 1}, len::Int, prec::Int)
+   function fq_rel_series(ctx::FqFiniteField, a::Array{fq, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fq_poly_init2, :libflint), Void, 
             (Ptr{fq_rel_series}, Int, Ptr{FqFiniteField}), &z, len, &ctx)
@@ -1269,6 +1270,7 @@ type fq_rel_series <: SeriesElem{fq}
                                                &z, i - 1, &a[i], &ctx)
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fq_rel_series_clear_fn)
       return z
    end

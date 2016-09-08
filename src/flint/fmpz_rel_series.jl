@@ -73,7 +73,7 @@ zero(R::FmpzRelSeriesRing) = R(0)
 one(R::FmpzRelSeriesRing) = R(1)
 
 function gen(R::FmpzRelSeriesRing)
-   z = fmpz_rel_series([fmpz(1)], 1, max_precision(R), 1)
+   z = fmpz_rel_series([fmpz(1)], 1, max_precision(R) + 1, 1)
    z.parent = R
    return z
 end
@@ -239,11 +239,11 @@ function *(a::fmpz_rel_series, b::fmpz_rel_series)
    lena = min(lena, prec)
    lenb = min(lenb, prec)
    z = parent(a)()
+   z.val = a.val + b.val
+   z.prec = prec + z.val
    if lena == 0 || lenb == 0
       return z
    end
-   z.val = a.val + b.val
-   z.prec = prec + z.val
    lenz = min(lena + lenb - 1, prec)
    ccall((:fmpz_poly_mullow, :libflint), Void, 
                 (Ptr{fmpz_rel_series}, Ptr{fmpz_rel_series}, Ptr{fmpz_rel_series}, Int), 
@@ -337,6 +337,7 @@ function truncate(x::fmpz_rel_series, prec::Int)
    if prec <= xval
       z = parent(x)()
       z.val = prec
+      z.prec = prec
    else
       z.val = xval
       ccall((:fmpz_poly_set_trunc, :libflint), Void, 
@@ -658,3 +659,16 @@ function Base.call(a::FmpzRelSeriesRing, b::Array{fmpz, 1}, len::Int, prec::Int,
    return z
 end
 
+###############################################################################
+#
+#   PowerSeriesRing constructor
+#
+###############################################################################
+
+function PowerSeriesRing(R::FlintIntegerRing, prec::Int, s::AbstractString{})
+   S = Symbol(s)
+
+   parent_obj = FmpzRelSeriesRing(prec, S)
+   
+   return parent_obj, parent_obj([fmpz(1)], 1, prec + 1, 1)
+end

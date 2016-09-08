@@ -67,12 +67,6 @@ function test_fmpz_mod_rel_series_manipulation()
 
    @test isequal(deepcopy(b), b)
 
-   @test length(a) == 4
-
-   @test length(b) == 0
-
-   @test normalise(a, 4) == 4
-
    @test coeff(a, 1) == 2
 
    @test coeff(b, 7) == 0

@@ -15,7 +15,7 @@ export fmpz_mod_rel_series, FmpzModRelSeriesRing
 function O(a::fmpz_mod_rel_series)
    val = pol_length(a) + valuation(a) - 1
    val < 0 && throw(DomainError())
-   z = fmpz_mod_rel_series(Array(fmpz, 0), 0, val, val)
+   z = fmpz_mod_rel_series(modulus(a), Array(fmpz, 0), 0, val, val)
    z.parent = parent(a)
    return z
 end
@@ -59,13 +59,14 @@ end
 precision(x::fmpz_mod_rel_series) = x.prec
 
 function polcoeff(x::fmpz_mod_rel_series, n::Int)
+   R = base_ring(x)
    if n < 0
-      return fmpz(0)
+      return R(0)
    end
    z = fmpz()
    ccall((:fmpz_mod_poly_get_coeff_fmpz, :libflint), Void, 
          (Ptr{fmpz}, Ptr{fmpz_mod_rel_series}, Int), &z, &x, n)
-   return z
+   return R(z)
 end
 
 zero(R::FmpzModRelSeriesRing) = R(0)
@@ -73,10 +74,12 @@ zero(R::FmpzModRelSeriesRing) = R(0)
 one(R::FmpzModRelSeriesRing) = R(1)
 
 function gen(R::FmpzModRelSeriesRing)
-   z = fmpz_mod_rel_series([fmpz(1)], 1, max_precision(R), 1)
+   z = fmpz_mod_rel_series(modulus(R), [fmpz(1)], 1, max_precision(R) + 1, 1)
    z.parent = R
    return z
 end
+
+modulus(R::FmpzModRelSeriesRing) = modulus(base_ring(R))
 
 function deepcopy(a::fmpz_mod_rel_series)
    z = fmpz_mod_rel_series(a)
@@ -239,11 +242,11 @@ function *(a::fmpz_mod_rel_series, b::fmpz_mod_rel_series)
    lena = min(lena, prec)
    lenb = min(lenb, prec)
    z = parent(a)()
+   z.val = a.val + b.val
+   z.prec = prec + z.val
    if lena == 0 || lenb == 0
       return z
    end
-   z.val = a.val + b.val
-   z.prec = prec + z.val
    lenz = min(lena + lenb - 1, prec)
    ccall((:fmpz_mod_poly_mullow, :libflint), Void, 
                 (Ptr{fmpz_mod_rel_series}, Ptr{fmpz_mod_rel_series}, Ptr{fmpz_mod_rel_series}, Int), 
@@ -283,7 +286,7 @@ end
 
 *(x::fmpz_mod_rel_series, y::fmpz) = y * x
 
-function *(x::Integer, y::fmpz_mod_rel_series) = fmpz(x)*y
+*(x::Integer, y::fmpz_mod_rel_series) = fmpz(x)*y
 
 *(x::fmpz_mod_rel_series, y::Integer) = y * x
 
@@ -342,6 +345,7 @@ function truncate(x::fmpz_mod_rel_series, prec::Int)
    if prec <= xval
       z = parent(x)()
       z.val = prec
+      z.prec = prec
    else
       z.val = xval
       ccall((:fmpz_mod_poly_set_trunc, :libflint), Void, 
@@ -536,6 +540,43 @@ end
 
 ###############################################################################
 #
+#   Special functions
+#
+###############################################################################
+
+function exp(a::fmpz_mod_rel_series)
+   if a == 0
+      z = one(parent(a))
+      z.prec = precision(a)
+      z.val = valuation(a)
+      return z
+   end
+   z = parent(a)()
+   R = base_ring(a)
+   vala = valuation(a)
+   preca = precision(a)
+   d = Array(fmpz, preca)
+   c = vala == 0 ? polcoeff(a, 0) : R()
+   d[1] = exp(c).data
+   len = pol_length(a) + vala
+   z0 = fmpz()
+   for k = 1 : preca - 1
+      s = fmpz()
+      for j = 1 : min(k + 1, len) - 1
+         c = j >= vala ? polcoeff(a, j - vala).data : z0
+         s += j * c * d[k - j + 1]
+      end
+      !isunit(base_ring(a)(k)) && error("Unable to divide in exp")
+      d[k + 1] = divexact(base_ring(a)(s), k).data
+   end
+   z = parent(a)(d, preca, preca, 0)
+   ccall((:_fmpz_mod_poly_set_length, :libflint), Void,
+         (Ptr{fmpz_mod_rel_series}, Int), &z, normalise(z, preca))
+   return z
+end
+
+###############################################################################
+#
 #   Unsafe functions
 #
 ###############################################################################
@@ -579,8 +620,9 @@ function addeq!(a::fmpz_mod_rel_series, b::fmpz_mod_rel_series)
    val = min(a.val, b.val)
    lena = min(lena, prec - a.val)
    lenb = min(lenb, prec - b.val)
+   modulus = modulus(a)
    if a.val < b.val
-      z = fmpz_mod_rel_series()
+      z = fmpz_mod_rel_series(modulus)
       lenz = max(lena, lenb + b.val - a.val)
       ccall((:fmpz_mod_poly_set_trunc, :libflint), Void,
             (Ptr{fmpz_mod_rel_series}, Ptr{fmpz_mod_rel_series}, Int),
@@ -616,43 +658,6 @@ end
 
 ###############################################################################
 #
-#   Special functions
-#
-###############################################################################
-
-function exp(a::fmpz_mod_rel_series)
-   if a == 0
-      z = one(parent(a))
-      z.prec = precision(a)
-      z.val valuation(a)
-      return z
-   end
-   z = parent(a)()
-   R = base_ring(a)
-   vala = valuation(a)
-   preca = precision(a)
-   d = Array(fmpz, preca)
-   c = vala == 0 ? polcoeff(a, 0) : R()
-   d[1] = exp(c).data
-   len = pol_length(a) + vala
-   z0 = fmpz()
-   for k = 1 : preca - 1
-      s = fmpz()
-      for j = 1 : min(k + 1, len) - 1
-         c = j >= vala ? polcoeff(a, j - vala).data : z0
-         s += j * c * d[k - j + 1]
-      end
-      !isunit(base_ring(a)(k)) && error("Unable to divide in exp")
-      d[k + 1] = divexact(base_ring(a)(s), k).data
-   end
-   z = parent(a)(d, preca, preca, 0)
-   ccall((:_fmpz_mod_poly_set_length, :flintlib), Void,
-         (Ptr{fmpz_mod_poly}, Int), &z, normalise(z, preca))
-   return z
-end
-
-###############################################################################
-#
 #   Promotion rules
 #
 ###############################################################################
@@ -670,7 +675,7 @@ Base.promote_rule(::Type{fmpz_mod_rel_series}, ::Type{GenRes{fmpz}}) = fmpz_mod_
 ###############################################################################
 
 function Base.call(a::FmpzModRelSeriesRing)
-   z = fmpz_mod_rel_series()
+   z = fmpz_mod_rel_series(modulus(a))
    z.prec = a.prec_max
    z.val = a.prec_max
    z.parent = a
@@ -679,10 +684,10 @@ end
 
 function Base.call(a::FmpzModRelSeriesRing, b::Integer)
    if b == 0
-      z = fmpz_mod_rel_series()
+      z = fmpz_mod_rel_series(modulus(a))
       z.prec = a.prec_max
    else
-      z = fmpz_mod_rel_series([fmpz(b)], 1, a.prec_max, 0)
+      z = fmpz_mod_rel_series(modulus(a), [fmpz(b)], 1, a.prec_max, 0)
    end
    z.parent = a
    return z
@@ -690,10 +695,10 @@ end
 
 function Base.call(a::FmpzModRelSeriesRing, b::fmpz)
    if b == 0
-      z = fmpz_mod_rel_series()
+      z = fmpz_mod_rel_series(modulus(a))
       z.prec = a.prec_max
    else
-      z = fmpz_mod_rel_series([b], 1, a.prec_max, 0)
+      z = fmpz_mod_rel_series(modulus(a), [b], 1, a.prec_max, 0)
    end
    z.parent = a
    return z
@@ -701,10 +706,10 @@ end
 
 function Base.call(a::FmpzModRelSeriesRing, b::GenRes{fmpz})
    if b == 0
-      z = fmpz_mod_rel_series()
+      z = fmpz_mod_rel_series(modulus(a))
       z.prec = a.prec_max
    else
-      z = fmpz_mod_rel_series([b], 1, a.prec_max, 0)
+      z = fmpz_mod_rel_series(modulus(a), [b], 1, a.prec_max, 0)
    end
    z.parent = a
    return z
@@ -716,14 +721,27 @@ function Base.call(a::FmpzModRelSeriesRing, b::fmpz_mod_rel_series)
 end
 
 function Base.call(a::FmpzModRelSeriesRing, b::Array{fmpz, 1}, len::Int, prec::Int, val::Int)
-   z = fmpz_mod_rel_series(b, len, prec, val)
+   z = fmpz_mod_rel_series(modulus(a), b, len, prec, val)
    z.parent = a
    return z
 end
 
 function Base.call(a::FmpzModRelSeriesRing, b::Array{GenRes{fmpz}, 1}, len::Int, prec::Int, val::Int)
-   z = fmpz_mod_rel_series(b, len, prec, val)
+   z = fmpz_mod_rel_series(modulus(a), b, len, prec, val)
    z.parent = a
    return z
 end
 
+###############################################################################
+#
+#   PowerSeriesRing constructor
+#
+###############################################################################
+
+function PowerSeriesRing(R::GenResRing{fmpz}, prec::Int, s::AbstractString{})
+   S = Symbol(s)
+
+   parent_obj = FmpzModRelSeriesRing(R, prec, S)
+
+   return parent_obj, parent_obj([fmpz(1)], 1, prec + 1, 1)
+end
