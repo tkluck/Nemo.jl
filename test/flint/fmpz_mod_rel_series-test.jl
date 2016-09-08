@@ -13,9 +13,9 @@ function test_fmpz_mod_rel_series_constructors()
    @test isa(b, SeriesElem)
 
    c = S(a)
-   d = S([fmpz(0), fmpz(3), fmpz(1)], 3, 5)
+   d = S([fmpz(0), fmpz(3), fmpz(1)], 3, 5, 0)
 
-   f = S([R(0), R(3), R(1)], 3, 5)
+   f = S([R(0), R(3), R(1)], 3, 5, 0)
 
    @test isa(c, SeriesElem)
    @test isa(d, SeriesElem)

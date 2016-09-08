@@ -1159,12 +1159,13 @@ type FmpzModRelSeriesRing <: SeriesRing{GenRes{fmpz}}
    end
 end
 
-type fmpz_mod_rel_series <: SeriesElem{GenRes{fmpz}}
+type fmpz_mod_rel_series <: RelSeriesElem{GenRes{fmpz}}
    coeffs::Ptr{Void}
    alloc::Int
    length::Int
    p::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FmpzModRelSeriesRing
 
    function fmpz_mod_rel_series(p::fmpz)
@@ -1175,7 +1176,7 @@ type fmpz_mod_rel_series <: SeriesElem{GenRes{fmpz}}
       return z
    end
    
-   function fmpz_mod_rel_series(p::fmpz, a::Array{fmpz, 1}, len::Int, prec::Int)
+   function fmpz_mod_rel_series(p::fmpz, a::Array{fmpz, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpz_mod_poly_init2, :libflint), Void, 
             (Ptr{fmpz_mod_rel_series}, Ptr{fmpz}, Int), &z, &p, len)
@@ -1184,11 +1185,12 @@ type fmpz_mod_rel_series <: SeriesElem{GenRes{fmpz}}
                      (Ptr{fmpz_mod_rel_series}, Int, Ptr{fmpz}), &z, i - 1, &a[i])
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fmpz_mod_rel_series_clear_fn)
       return z
    end
    
-   function fmpz_mod_rel_series(p::fmpz, a::Array{GenRes{fmpz}, 1}, len::Int, prec::Int)
+   function fmpz_mod_rel_series(p::fmpz, a::Array{GenRes{fmpz}, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpz_mod_poly_init2, :libflint), Void, 
             (Ptr{fmpz_mod_rel_series}, Ptr{fmpz}, Int), &z, &p, len)
@@ -1197,6 +1199,7 @@ type fmpz_mod_rel_series <: SeriesElem{GenRes{fmpz}}
                      (Ptr{fmpz_mod_rel_series}, Int, Ptr{fmpz}), &z, i - 1, &data(a[i]))
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fmpz_mod_rel_series_clear_fn)
       return z
    end
