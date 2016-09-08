@@ -1316,11 +1316,12 @@ type FqNmodRelSeriesRing <: SeriesRing{fq_nmod}
    end
 end
 
-type fq_nmod_rel_series <: SeriesElem{fq_nmod}
+type fq_nmod_rel_series <: RelSeriesElem{fq_nmod}
    coeffs::Ptr{Void}
    alloc::Int
    length::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FqNmodRelSeriesRing
 
    function fq_nmod_rel_series(ctx::FqNmodFiniteField)
@@ -1331,7 +1332,7 @@ type fq_nmod_rel_series <: SeriesElem{fq_nmod}
       return z
    end
    
-   function fq_nmod_rel_series(ctx::FqNmodFiniteField, a::Array{fq_nmod, 1}, len::Int, prec::Int)
+   function fq_nmod_rel_series(ctx::FqNmodFiniteField, a::Array{fq_nmod, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fq_nmod_poly_init2, :libflint), Void, 
             (Ptr{fq_nmod_rel_series}, Int, Ptr{FqNmodFiniteField}), &z, len, &ctx)
@@ -1341,6 +1342,7 @@ type fq_nmod_rel_series <: SeriesElem{fq_nmod}
                                                &z, i - 1, &a[i], &ctx)
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fq_nmod_rel_series_clear_fn)
       return z
    end

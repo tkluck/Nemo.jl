@@ -13,7 +13,7 @@ function test_fq_nmod_rel_series_constructors()
    @test isa(b, SeriesElem)
 
    c = S(a)
-   d = S([t + 1, t, R(1)], 3, 5)
+   d = S([t + 1, t, R(1)], 3, 5, 0)
 
    @test isa(c, SeriesElem)
    @test isa(d, SeriesElem)
