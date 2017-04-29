@@ -45,6 +45,28 @@ function test_acb_mat_constructors()
 
    @test isa(r, MatElem)
 
+   @test_throws ErrorConstrDimMismatch S([1 2])
+   @test_throws ErrorConstrDimMismatch S([1, 2])
+   @test_throws ErrorConstrDimMismatch S([1 2 3; 4 5 6; 7 8 9; 10 11 12])
+   @test_throws ErrorConstrDimMismatch S([1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+   @test_throws ErrorConstrDimMismatch S([(1,1) (2,2)])
+   @test_throws ErrorConstrDimMismatch S([(1,1), (2,2)])
+   @test_throws ErrorConstrDimMismatch S([(1,1) (2,2) (3,3); (4,4) (5,5) (6,6);
+                                          (7,7) (8,8) (9,9); (10,10) (11,11) (12,12)])
+   @test_throws ErrorConstrDimMismatch S([(1,1), (2,2), (3,3), (4,4), (5,5), (6,6), (7,7),
+                                          (8,8), (9,9), (10,10)])
+
+   println("PASS")
+end
+
+function test_acb_mat_printing()
+   print("acb_mat.constructors...")
+ 
+   S = MatrixSpace(CC, 3, 3)
+   f = S(fmpz(3))
+
+   @test string(f) == "[3.0000000000000000000 + i*0 0 + i*0 0 + i*0]\n[0 + i*0 3.0000000000000000000 + i*0 0 + i*0]\n[0 + i*0 0 + i*0 3.0000000000000000000 + i*0]"
+
    println("PASS")
 end
 
@@ -404,6 +426,7 @@ end
 
 function test_acb_mat()
    test_acb_mat_constructors()
+   test_acb_mat_printing()
    test_acb_mat_manipulation()
    test_acb_mat_unary_ops()
    test_acb_mat_transpose()

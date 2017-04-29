@@ -61,7 +61,7 @@ gen(a::FmpqPolyRing) = a([zero(base_ring(a)), one(base_ring(a))])
 isgen(x::fmpq_poly) = ccall((:fmpq_poly_is_x, :libflint), Bool, 
                             (Ptr{fmpq_poly},), &x)
 
-function deepcopy(a::fmpq_poly)
+function deepcopy_internal(a::fmpq_poly, dict::ObjectIdDict)
    z = fmpq_poly(a)
    z.parent = parent(a)
    return z
@@ -77,7 +77,7 @@ canonical_unit(a::fmpq_poly) = canonical_unit(lead(a))
 
 ###############################################################################
 #
-#   AbstractString{} I/O
+#   AbstractString I/O
 #
 ###############################################################################
 
@@ -86,9 +86,9 @@ function show(io::IO, x::fmpq_poly)
       print(io, "0")
    else
       cstr = ccall((:fmpq_poly_get_str_pretty, :libflint), Ptr{UInt8}, 
-          (Ptr{fmpq_poly}, Ptr{UInt8}), &x, bytestring(string(var(parent(x)))))
+          (Ptr{fmpq_poly}, Ptr{UInt8}), &x, string(var(parent(x))))
 
-      print(io, bytestring(cstr))
+      print(io, unsafe_string(cstr))
 
       ccall((:flint_free, :libflint), Void, (Ptr{UInt8},), cstr)
    end
@@ -395,7 +395,6 @@ end
 
 rem(x::fmpq_poly, y::fmpq_poly) = mod(x, y)
 
-
 function divrem(x::fmpq_poly, y::fmpq_poly)
    check_parent(x, y)
    y == 0 && throw(DivideError())
@@ -577,6 +576,42 @@ function gcdx(x::fmpq_poly, y::fmpq_poly)
    return (z, u, v)
 end
 
+################################################################################
+#
+#   Factorization
+#
+################################################################################
+
+doc"""
+    factor(x::fmpq_poly)
+> Returns the factorization of $x$.
+"""
+function factor(x::fmpq_poly)
+   res, z = _factor(x)
+   return Fac(parent(x)(z), res)
+end
+
+function _factor(x::fmpq_poly)
+   res = Dict{fmpq_poly, Int}()
+   y = fmpz_poly()
+   ccall((:fmpq_poly_get_numerator, :libflint), Void,
+         (Ptr{fmpz_poly}, Ptr{fmpq_poly}), &y, &x)
+   fac = fmpz_poly_factor()
+   ccall((:fmpz_poly_factor, :libflint), Void,
+              (Ptr{fmpz_poly_factor}, Ptr{fmpz_poly}), &fac, &y)
+   z = fmpz()
+   ccall((:fmpz_poly_factor_get_fmpz, :libflint), Void,
+            (Ptr{fmpz}, Ptr{fmpz_poly_factor}), &z, &fac)
+   f = fmpz_poly()
+   for i in 1:fac.num
+      ccall((:fmpz_poly_factor_get_fmpz_poly, :libflint), Void,
+            (Ptr{fmpz_poly}, Ptr{fmpz_poly_factor}, Int), &f, &fac, i - 1)
+      e = unsafe_load(fac.exp, i)
+      res[parent(x)(f)] = e
+   end
+   return res, fmpq(z, den(x))
+end
+
 ###############################################################################
 #
 #   Signature
@@ -589,8 +624,8 @@ doc"""
 > real roots of $f$ and $s$ is half the number of complex roots.
 """
 function signature(f::fmpq_poly)
-   r = Array(Int, 1)
-   s = Array(Int, 1)
+   r = Array{Int}(1)
+   s = Array{Int}(1)
    z = fmpz_poly()
    ccall((:fmpq_poly_get_numerator, :libflint), Void,
          (Ptr{fmpz_poly}, Ptr{fmpq_poly}), &z, &f)
@@ -671,7 +706,7 @@ Base.promote_rule(::Type{fmpq_poly}, ::Type{fmpq}) = fmpq_poly
 #
 ###############################################################################
 
-Base.call(f::fmpq_poly, a::fmpq) = evaluate(f, a)
+(f::fmpq_poly)(a::fmpq) = evaluate(f, a)
 
 ###############################################################################
 #
@@ -679,45 +714,49 @@ Base.call(f::fmpq_poly, a::fmpq) = evaluate(f, a)
 #
 ###############################################################################
 
-function Base.call(a::FmpqPolyRing)
+function (a::FmpqPolyRing)()
    z = fmpq_poly()
    z.parent = a
    return z
 end
 
-function Base.call(a::FmpqPolyRing, b::Int)
+function (a::FmpqPolyRing)(b::Int)
    z = fmpq_poly(b)
    z.parent = a
    return z
 end
 
-function Base.call(a::FmpqPolyRing, b::Integer)
+function (a::FmpqPolyRing)(b::Integer)
    z = fmpq_poly(fmpz(b))
    z.parent = a
    return z
 end
 
-function Base.call(a::FmpqPolyRing, b::fmpz)
+function (a::FmpqPolyRing)(b::fmpz)
    z = fmpq_poly(b)
    z.parent = a
    return z
 end
 
-function Base.call(a::FmpqPolyRing, b::fmpq)
+function (a::FmpqPolyRing)(b::fmpq)
    z = fmpq_poly(b)
    z.parent = a
    return z
 end
 
-function Base.call(a::FmpqPolyRing, b::Array{fmpq, 1})
+function (a::FmpqPolyRing)(b::Array{fmpq, 1})
    z = fmpq_poly(b)
    z.parent = a
    return z
 end
 
-Base.call(a::FmpqPolyRing, b::fmpq_poly) = b
+(a::FmpqPolyRing){T <: Integer}(b::Array{T, 1}) = a(map(fmpq, b))
 
-function Base.call(a::FmpqPolyRing, b::fmpz_poly)
+(a::FmpqPolyRing)(b::Array{fmpz, 1}) = a(map(fmpq, b))
+
+(a::FmpqPolyRing)(b::fmpq_poly) = b
+
+function (a::FmpqPolyRing)(b::fmpz_poly)
    z = fmpq_poly(b)
    z.parent = a
    return z
@@ -729,10 +768,10 @@ end
 #
 ###############################################################################
 
-function PolynomialRing(R::FlintRationalField, s::AbstractString{})
+function PolynomialRing(R::FlintRationalField, s::AbstractString; cached = true)
    S = Symbol(s)
 
-   parent_obj = FmpqPolyRing(R, S)
+   parent_obj = FmpqPolyRing(R, S, cached)
    
    return parent_obj, parent_obj([fmpq(0), fmpq(1)])
 end

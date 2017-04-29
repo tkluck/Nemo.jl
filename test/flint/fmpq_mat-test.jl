@@ -29,6 +29,21 @@ function test_fmpq_mat_constructors()
 
    @test isa(m, MatElem)
 
+   @test_throws ErrorConstrDimMismatch (S([fmpq(1) 2; 3 4]))
+   @test_throws ErrorConstrDimMismatch (S([fmpq(1), 2, 3, 4]))
+   @test_throws ErrorConstrDimMismatch (S([fmpq(1) 2 3 4; 5 6 7 8; 1 2 3 4]))
+   @test_throws ErrorConstrDimMismatch (S([fmpq(1), 2, 3, 4, 5, 6, 7, 8, 1, 2, 3, 4]))
+
+   println("PASS")
+end
+
+function test_fmpq_mat_printing()
+   print("fmpq_mat.printing...")
+ 
+   a = MatrixSpace(QQ, 2, 2)(1)
+   
+   @test string(a) == "[1 0]\n[0 1]"
+
    println("PASS")
 end
 
@@ -392,6 +407,7 @@ end
 
 function test_fmpq_mat()
    test_fmpq_mat_constructors()
+   test_fmpq_mat_printing()
    test_fmpq_mat_manipulation()
    test_fmpq_mat_unary_ops()
    test_fmpq_mat_binary_ops()

@@ -63,6 +63,26 @@ function _fmpz_clear_fn(a::fmpz)
    ccall((:fmpz_clear, :libflint), Void, (Ptr{fmpz},), &a)
 end
 
+type fmpz_factor
+   sign::Cint
+   p::Ptr{Void} # Array of fmpz_struct's
+   exp::Ptr{UInt}
+   alloc::Int
+   num::Int
+
+   function fmpz_factor()
+      z = new()
+      ccall((:fmpz_factor_init, :libflint), Void, (Ptr{fmpz_factor}, ), &z)
+      finalizer(z, _fmpz_factor_clear_fn)
+      return z
+   end
+end
+
+function _fmpz_factor_clear_fn(a::fmpz_factor)
+   ccall((:fmpz_factor_clear, :libflint), Void,
+         (Ptr{fmpz_factor}, ), &a)
+end
+
 ###############################################################################
 #
 #   FlintRationalField / fmpq
@@ -139,12 +159,14 @@ type FmpzPolyRing <: PolyRing{fmpz}
    base_ring::FlintIntegerRing
    S::Symbol
 
-   function FmpzPolyRing(s::Symbol)
+   function FmpzPolyRing(s::Symbol, cached=true)
       if haskey(FmpzPolyID, s)
          return FmpzPolyID[s]::FmpzPolyRing
       else
          z = new(FlintZZ, s)
-         FmpzPolyID[s] = z
+         if cached
+            FmpzPolyID[s] = z
+         end
          return z
       end
    end
@@ -206,6 +228,28 @@ function _fmpz_poly_clear_fn(a::fmpz_poly)
    ccall((:fmpz_poly_clear, :libflint), Void, (Ptr{fmpz_poly},), &a)
 end
 
+type fmpz_poly_factor
+  d::Int # fmpz
+  p::Ptr{fmpz_poly} # array of flint fmpz_poly_struct's
+  exp::Ptr{Int}
+  num::Int
+  alloc::Int
+
+  function fmpz_poly_factor()
+    z = new()
+    ccall((:fmpz_poly_factor_init, :libflint), Void,
+                (Ptr{fmpz_poly_factor}, ), &z)
+    finalizer(z, _fmpz_poly_factor_clear_fn)
+    return z
+  end
+end
+
+function _fmpz_poly_factor_clear_fn(f::fmpz_poly_factor)
+  ccall((:fmpz_poly_factor_clear, :libflint), Void,
+            (Ptr{fmpz_poly_factor}, ), &f)
+  nothing
+end
+
 ###############################################################################
 #
 #   FmpqPolyRing / fmpq_poly
@@ -218,12 +262,14 @@ type FmpqPolyRing <: PolyRing{fmpq}
    base_ring::FlintRationalField
    S::Symbol
 
-   function FmpqPolyRing(R::FlintRationalField, s::Symbol)
+   function FmpqPolyRing(R::FlintRationalField, s::Symbol, cached=true)
       if haskey(FmpqPolyID, s)
          return FmpqPolyID[s]::FmpqPolyRing
       else
          z = new(R, s)
-         FmpqPolyID[s] = z
+         if cached
+            FmpqPolyID[s] = z
+         end
          return z
       end
    end
@@ -753,29 +799,33 @@ type FqNmodFiniteField <: FinField
    inv_norm :: Int
    var :: Ptr{Void}
 
-   function FqNmodFiniteField(c::fmpz, deg::Int, s::Symbol)
+   function FqNmodFiniteField(c::fmpz, deg::Int, s::Symbol, cached=true)
       if haskey(FqNmodFiniteFieldID, (c, deg, s))
          return FqNmodFiniteFieldID[c, deg, s]::FqNmodFiniteField
       else
          d = new()
          ccall((:fq_nmod_ctx_init, :libflint), Void, 
                (Ptr{FqNmodFiniteField}, Ptr{fmpz}, Int, Ptr{UInt8}), 
-			    &d, &c, deg, bytestring(string(s)))
-         FqNmodFiniteFieldID[c, deg, s] = d
+			    &d, &c, deg, string(s))
+         if cached
+            FqNmodFiniteFieldID[c, deg, s] = d
+         end
          finalizer(d, _FqNmodFiniteField_clear_fn)
          return d
       end
    end
 
-   function FqNmodFiniteField(f::nmod_poly, s::Symbol)
+   function FqNmodFiniteField(f::nmod_poly, s::Symbol, cached=true)
       if haskey(FqNmodFiniteFieldIDPol, (parent(f), f, s))
          return FqNmodFiniteFieldIDPol[parent(f), f, s]::FqNmodFiniteField
       else
          z = new()
          ccall((:fq_nmod_ctx_init_modulus, :libflint), Void, 
             (Ptr{FqNmodFiniteField}, Ptr{nmod_poly}, Ptr{UInt8}), 
-	      &z, &f, bytestring(string(s)))
-         FqNmodFiniteFieldIDPol[parent(f), f, s] = z
+	      &z, &f, string(s))
+         if cached
+            FqNmodFiniteFieldIDPol[parent(f), f, s] = z
+         end
          finalizer(z, _FqNmodFiniteField_clear_fn)
          return z
       end
@@ -865,29 +915,33 @@ type FqFiniteField <: FinField
    inv_p::Int # fmpz
    var::Ptr{Void}
 
-   function FqFiniteField(char::fmpz, deg::Int, s::Symbol)
+   function FqFiniteField(char::fmpz, deg::Int, s::Symbol, cached=true)
       if haskey(FqFiniteFieldID, (char, deg, s))
          return FqFiniteFieldID[char, deg, s]::FqFiniteField
       else
          d = new()
-         FqFiniteFieldID[char, deg, s] = d
          finalizer(d, _FqFiniteField_clear_fn)
          ccall((:fq_ctx_init, :libflint), Void,
                (Ptr{FqFiniteField}, Ptr{fmpz}, Int, Ptr{UInt8}),
-                  &d, &char, deg, bytestring(string(s)))
+                  &d, &char, deg, string(s))
+         if cached
+            FqFiniteFieldID[char, deg, s] = d
+         end
          return d
       end
    end
    
-   function FqFiniteField(f::fmpz_mod_poly, s::Symbol)
+   function FqFiniteField(f::fmpz_mod_poly, s::Symbol, cached=true)
       if haskey(FqFiniteFieldIDPol, (f, s))
          return FqFiniteFieldIDPol[f, s]::FqFiniteField
       else
          z = new()
          ccall((:fq_ctx_init_modulus, :libflint), Void,
                (Ptr{FqFiniteField}, Ptr{fmpz_mod_poly}, Ptr{UInt8}),
-                  &z, &f, bytestring(string(s)))
-         FqFiniteFieldIDPol[f, s] = z
+                  &z, &f, string(s))
+         if cached
+            FqFiniteFieldIDPol[f, s] = z
+         end
          finalizer(z, _FqFiniteField_clear_fn)
          return z
       end
@@ -1009,29 +1063,32 @@ end
 #
 ###############################################################################
 
-const FmpzSeriesID = ObjectIdDict()
+const FmpzRelSeriesID = ObjectIdDict()
 
 type FmpzRelSeriesRing <: SeriesRing{fmpz}
    base_ring::FlintIntegerRing
    prec_max::Int
    S::Symbol
 
-   function FmpzRelSeriesRing(prec::Int, s::Symbol)
-      if haskey(FmpzSeriesID, (prec, s))
-         FmpzSeriesID[prec, s]::FmpzRelSeriesRing
+   function FmpzRelSeriesRing(prec::Int, s::Symbol, cached=true)
+      if haskey(FmpzRelSeriesID, (prec, s))
+         FmpzRelSeriesID[prec, s]::FmpzRelSeriesRing
       else
          z = new(FlintZZ, prec, s)
-         FmpzSeriesID[prec, s] = z
+         if cached
+            FmpzRelSeriesID[prec, s] = z
+         end
          return z
       end
    end
 end
 
-type fmpz_rel_series <: SeriesElem{fmpz}
+type fmpz_rel_series <: RelSeriesElem{fmpz}
    coeffs::Ptr{Void}
    alloc::Int
    length::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FmpzRelSeriesRing
 
    function fmpz_rel_series()
@@ -1042,7 +1099,7 @@ type fmpz_rel_series <: SeriesElem{fmpz}
       return z
    end
    
-   function fmpz_rel_series(a::Array{fmpz, 1}, len::Int, prec::Int)
+   function fmpz_rel_series(a::Array{fmpz, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpz_poly_init2, :libflint), Void, 
             (Ptr{fmpz_rel_series}, Int), &z, len)
@@ -1051,6 +1108,7 @@ type fmpz_rel_series <: SeriesElem{fmpz}
                      (Ptr{fmpz_rel_series}, Int, Ptr{fmpz}), &z, i - 1, &a[i])
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fmpz_rel_series_clear_fn)
       return z
    end
@@ -1071,34 +1129,105 @@ end
 
 ###############################################################################
 #
+#   FmpzAbsSeriesRing / fmpz_abs_series
+#
+###############################################################################
+
+const FmpzAbsSeriesID = ObjectIdDict()
+
+type FmpzAbsSeriesRing <: SeriesRing{fmpz}
+   base_ring::FlintIntegerRing
+   prec_max::Int
+   S::Symbol
+
+   function FmpzAbsSeriesRing(prec::Int, s::Symbol, cached=true)
+      if haskey(FmpzAbsSeriesID, (prec, s))
+         FmpzAbsSeriesID[prec, s]::FmpzAbsSeriesRing
+      else
+         z = new(FlintZZ, prec, s)
+         if cached
+            FmpzAbsSeriesID[prec, s] = z
+         end
+         return z
+      end
+   end
+end
+
+type fmpz_abs_series <: AbsSeriesElem{fmpz}
+   coeffs::Ptr{Void}
+   alloc::Int
+   length::Int
+   prec :: Int
+   parent::FmpzAbsSeriesRing
+
+   function fmpz_abs_series()
+      z = new()
+      ccall((:fmpz_poly_init, :libflint), Void, 
+            (Ptr{fmpz_abs_series},), &z)
+      finalizer(z, _fmpz_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpz_abs_series(a::Array{fmpz, 1}, len::Int, prec::Int)
+      z = new()
+      ccall((:fmpz_poly_init2, :libflint), Void, 
+            (Ptr{fmpz_abs_series}, Int), &z, len)
+      for i = 1:len
+         ccall((:fmpz_poly_set_coeff_fmpz, :libflint), Void, 
+                     (Ptr{fmpz_abs_series}, Int, Ptr{fmpz}), &z, i - 1, &a[i])
+      end
+      z.prec = prec
+      finalizer(z, _fmpz_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpz_abs_series(a::fmpz_abs_series)
+      z = new()
+      ccall((:fmpz_poly_init, :libflint), Void, (Ptr{fmpz_abs_series},), &z)
+      ccall((:fmpz_poly_set, :libflint), Void, 
+            (Ptr{fmpz_abs_series}, Ptr{fmpz_abs_series}), &z, &a)
+      finalizer(z, _fmpz_abs_series_clear_fn)
+      return z
+   end
+end
+
+function _fmpz_abs_series_clear_fn(a::fmpz_abs_series)
+   ccall((:fmpz_poly_clear, :libflint), Void, (Ptr{fmpz_abs_series},), &a)
+end
+
+###############################################################################
+#
 #   FmpqRelSeriesRing / fmpq_rel_series
 #
 ###############################################################################
 
-const FmpqSeriesID = ObjectIdDict()
+const FmpqRelSeriesID = ObjectIdDict()
 
 type FmpqRelSeriesRing <: SeriesRing{fmpq}
    base_ring::FlintRationalField
    prec_max::Int
    S::Symbol
 
-   function FmpqRelSeriesRing(prec::Int, s::Symbol)
-      if haskey(FmpqSeriesID, (prec, s))
-         return FmpqSeriesID[prec, s]::FmpqRelSeriesRing
+   function FmpqRelSeriesRing(prec::Int, s::Symbol, cached=true)
+      if haskey(FmpqRelSeriesID, (prec, s))
+         return FmpqRelSeriesID[prec, s]::FmpqRelSeriesRing
       else
          z = new(FlintQQ, prec, s)
-         FmpqSeriesID[prec, s] = z
+         if cached
+            FmpqRelSeriesID[prec, s] = z
+         end
          return z
       end
    end
 end
 
-type fmpq_rel_series <: SeriesElem{fmpq}
+type fmpq_rel_series <: RelSeriesElem{fmpq}
    coeffs::Ptr{Void}
    den::Int
    alloc::Int
    length::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FmpqRelSeriesRing
 
    function fmpq_rel_series()
@@ -1109,7 +1238,7 @@ type fmpq_rel_series <: SeriesElem{fmpq}
       return z
    end
    
-   function fmpq_rel_series(a::Array{fmpq, 1}, len::Int, prec::Int)
+   function fmpq_rel_series(a::Array{fmpq, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpq_poly_init2, :libflint), Void, 
             (Ptr{fmpq_rel_series}, Int), &z, len)
@@ -1118,6 +1247,7 @@ type fmpq_rel_series <: SeriesElem{fmpq}
                      (Ptr{fmpq_rel_series}, Int, Ptr{fmpq}), &z, i - 1, &a[i])
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fmpq_rel_series_clear_fn)
       return z
    end
@@ -1138,33 +1268,106 @@ end
 
 ###############################################################################
 #
+#   FmpqAbsSeriesRing / fmpq_abs_series
+#
+###############################################################################
+
+const FmpqAbsSeriesID = ObjectIdDict()
+
+type FmpqAbsSeriesRing <: SeriesRing{fmpq}
+   base_ring::FlintRationalField
+   prec_max::Int
+   S::Symbol
+
+   function FmpqAbsSeriesRing(prec::Int, s::Symbol, cached=true)
+      if haskey(FmpqAbsSeriesID, (prec, s))
+         return FmpqAbsSeriesID[prec, s]::FmpqAbsSeriesRing
+      else
+         z = new(FlintQQ, prec, s)
+         if cached
+            FmpqAbsSeriesID[prec, s] = z
+         end
+         return z
+      end
+   end
+end
+
+type fmpq_abs_series <: AbsSeriesElem{fmpq}
+   coeffs::Ptr{Void}
+   den::Int
+   alloc::Int
+   length::Int
+   prec :: Int
+   parent::FmpqAbsSeriesRing
+
+   function fmpq_abs_series()
+      z = new()
+      ccall((:fmpq_poly_init, :libflint), Void, 
+            (Ptr{fmpq_abs_series},), &z)
+      finalizer(z, _fmpq_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpq_abs_series(a::Array{fmpq, 1}, len::Int, prec::Int)
+      z = new()
+      ccall((:fmpq_poly_init2, :libflint), Void, 
+            (Ptr{fmpq_abs_series}, Int), &z, len)
+      for i = 1:len
+         ccall((:fmpq_poly_set_coeff_fmpq, :libflint), Void, 
+                     (Ptr{fmpq_abs_series}, Int, Ptr{fmpq}), &z, i - 1, &a[i])
+      end
+      z.prec = prec
+      finalizer(z, _fmpq_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpq_abs_series(a::fmpq_abs_series)
+      z = new()
+      ccall((:fmpq_poly_init, :libflint), Void, (Ptr{fmpq_abs_series},), &z)
+      ccall((:fmpq_poly_set, :libflint), Void, 
+            (Ptr{fmpq_abs_series}, Ptr{fmpq_abs_series}), &z, &a)
+      finalizer(z, _fmpq_abs_series_clear_fn)
+      return z
+   end
+end
+
+function _fmpq_abs_series_clear_fn(a::fmpq_abs_series)
+   ccall((:fmpq_poly_clear, :libflint), Void, (Ptr{fmpq_abs_series},), &a)
+end
+
+###############################################################################
+#
 #   FmpzModRelSeriesRing / fmpz_mod_rel_series
 #
 ###############################################################################
 
-const FmpzModSeriesID = ObjectIdDict()
+const FmpzModRelSeriesID = ObjectIdDict()
 
 type FmpzModRelSeriesRing <: SeriesRing{GenRes{fmpz}}
    base_ring::GenResRing{fmpz}
    prec_max::Int
    S::Symbol
 
-   function FmpzModRelSeriesRing(R::Ring, prec::Int, s::Symbol)
-      if haskey(FmpzModSeriesID, (R, prec, s))
-         return FmpzModSeriesID[R, prec, s]::FmpzModRelSeriesRing
+   function FmpzModRelSeriesRing(R::Ring, prec::Int, s::Symbol, cached=true)
+      if haskey(FmpzModRelSeriesID, (R, prec, s))
+         return FmpzModRelSeriesID[R, prec, s]::FmpzModRelSeriesRing
       else
-         FmpzModSeriesID[R, prec, s] = new(R, prec, s)
-         return FmpzModSeriesID[R, prec, s]
+         z = new(R, prec, s)
+         if cached
+            FmpzModRelSeriesID[R, prec, s] = z
+         end
+         return z
       end
    end
 end
 
-type fmpz_mod_rel_series <: SeriesElem{GenRes{fmpz}}
+type fmpz_mod_rel_series <: RelSeriesElem{GenRes{fmpz}}
    coeffs::Ptr{Void}
    alloc::Int
    length::Int
    p::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FmpzModRelSeriesRing
 
    function fmpz_mod_rel_series(p::fmpz)
@@ -1175,7 +1378,7 @@ type fmpz_mod_rel_series <: SeriesElem{GenRes{fmpz}}
       return z
    end
    
-   function fmpz_mod_rel_series(p::fmpz, a::Array{fmpz, 1}, len::Int, prec::Int)
+   function fmpz_mod_rel_series(p::fmpz, a::Array{fmpz, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpz_mod_poly_init2, :libflint), Void, 
             (Ptr{fmpz_mod_rel_series}, Ptr{fmpz}, Int), &z, &p, len)
@@ -1184,11 +1387,12 @@ type fmpz_mod_rel_series <: SeriesElem{GenRes{fmpz}}
                      (Ptr{fmpz_mod_rel_series}, Int, Ptr{fmpz}), &z, i - 1, &a[i])
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fmpz_mod_rel_series_clear_fn)
       return z
    end
    
-   function fmpz_mod_rel_series(p::fmpz, a::Array{GenRes{fmpz}, 1}, len::Int, prec::Int)
+   function fmpz_mod_rel_series(p::fmpz, a::Array{GenRes{fmpz}, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fmpz_mod_poly_init2, :libflint), Void, 
             (Ptr{fmpz_mod_rel_series}, Ptr{fmpz}, Int), &z, &p, len)
@@ -1197,6 +1401,7 @@ type fmpz_mod_rel_series <: SeriesElem{GenRes{fmpz}}
                      (Ptr{fmpz_mod_rel_series}, Int, Ptr{fmpz}), &z, i - 1, &data(a[i]))
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fmpz_mod_rel_series_clear_fn)
       return z
    end
@@ -1219,33 +1424,120 @@ end
 
 ###############################################################################
 #
+#   FmpzModAbsSeriesRing / fmpz_mod_abs_series
+#
+###############################################################################
+
+const FmpzModAbsSeriesID = ObjectIdDict()
+
+type FmpzModAbsSeriesRing <: SeriesRing{GenRes{fmpz}}
+   base_ring::GenResRing{fmpz}
+   prec_max::Int
+   S::Symbol
+
+   function FmpzModAbsSeriesRing(R::Ring, prec::Int, s::Symbol, cached=true)
+      if haskey(FmpzModAbsSeriesID, (R, prec, s))
+         return FmpzModAbsSeriesID[R, prec, s]::FmpzModAbsSeriesRing
+      else
+         z = new(R, prec, s)
+         if cached
+            FmpzModAbsSeriesID[R, prec, s]  = z
+         end
+         return z
+      end
+   end
+end
+
+type fmpz_mod_abs_series <: AbsSeriesElem{GenRes{fmpz}}
+   coeffs::Ptr{Void}
+   alloc::Int
+   length::Int
+   p::Int
+   prec::Int
+   parent::FmpzModAbsSeriesRing
+
+   function fmpz_mod_abs_series(p::fmpz)
+      z = new()
+      ccall((:fmpz_mod_poly_init, :libflint), Void, 
+            (Ptr{fmpz_mod_abs_series}, Ptr{fmpz}), &z, &p)
+      finalizer(z, _fmpz_mod_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpz_mod_abs_series(p::fmpz, a::Array{fmpz, 1}, len::Int, prec::Int)
+      z = new()
+      ccall((:fmpz_mod_poly_init2, :libflint), Void, 
+            (Ptr{fmpz_mod_abs_series}, Ptr{fmpz}, Int), &z, &p, len)
+      for i = 1:len
+         ccall((:fmpz_mod_poly_set_coeff_fmpz, :libflint), Void, 
+                     (Ptr{fmpz_mod_abs_series}, Int, Ptr{fmpz}), &z, i - 1, &a[i])
+      end
+      z.prec = prec
+      finalizer(z, _fmpz_mod_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpz_mod_abs_series(p::fmpz, a::Array{GenRes{fmpz}, 1}, len::Int, prec::Int)
+      z = new()
+      ccall((:fmpz_mod_poly_init2, :libflint), Void, 
+            (Ptr{fmpz_mod_abs_series}, Ptr{fmpz}, Int), &z, &p, len)
+      for i = 1:len
+         ccall((:fmpz_mod_poly_set_coeff_fmpz, :libflint), Void, 
+                     (Ptr{fmpz_mod_abs_series}, Int, Ptr{fmpz}), &z, i - 1, &data(a[i]))
+      end
+      z.prec = prec
+      finalizer(z, _fmpz_mod_abs_series_clear_fn)
+      return z
+   end
+   
+   function fmpz_mod_abs_series(a::fmpz_mod_abs_series)
+      z = new()
+      p = modulus(base_ring(parent(a)))
+      ccall((:fmpz_mod_poly_init, :libflint), Void, 
+            (Ptr{fmpz_mod_abs_series}, Ptr{fmpz}), &z, &p)
+      ccall((:fmpz_mod_poly_set, :libflint), Void, 
+            (Ptr{fmpz_mod_abs_series}, Ptr{fmpz_mod_abs_series}), &z, &a)
+      finalizer(z, _fmpz_mod_abs_series_clear_fn)
+      return z
+   end
+end
+
+function _fmpz_mod_abs_series_clear_fn(a::fmpz_mod_abs_series)
+   ccall((:fmpz_mod_poly_clear, :libflint), Void, (Ptr{fmpz_mod_abs_series},), &a)
+end
+
+###############################################################################
+#
 #   FqRelSeriesRing / fq_rel_series
 #
 ###############################################################################
 
-const FqSeriesID = ObjectIdDict()
+const FqRelSeriesID = ObjectIdDict()
 
 type FqRelSeriesRing <: SeriesRing{fq}
    base_ring::FqFiniteField
    prec_max::Int
    S::Symbol
 
-   function FqRelSeriesRing(R::FqFiniteField, prec::Int, s::Symbol)
-      if haskey(FqSeriesID, (R, prec, s))
-         return FqSeriesID[R, prec, s]::FqRelSeriesRing
+   function FqRelSeriesRing(R::FqFiniteField, prec::Int, s::Symbol, cached=true)
+      if haskey(FqRelSeriesID, (R, prec, s))
+         return FqRelSeriesID[R, prec, s]::FqRelSeriesRing
       else
          z = new(R, prec, s)
-         FqSeriesID[R, prec, s] = z
+         if cached
+            FqRelSeriesID[R, prec, s] = z
+         end
          return z
       end
    end
 end
 
-type fq_rel_series <: SeriesElem{fq}
+type fq_rel_series <: RelSeriesElem{fq}
    coeffs::Ptr{Void}
    alloc::Int
    length::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FqRelSeriesRing
 
    function fq_rel_series(ctx::FqFiniteField)
@@ -1256,7 +1548,7 @@ type fq_rel_series <: SeriesElem{fq}
       return z
    end
    
-   function fq_rel_series(ctx::FqFiniteField, a::Array{fq, 1}, len::Int, prec::Int)
+   function fq_rel_series(ctx::FqFiniteField, a::Array{fq, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fq_poly_init2, :libflint), Void, 
             (Ptr{fq_rel_series}, Int, Ptr{FqFiniteField}), &z, len, &ctx)
@@ -1266,6 +1558,7 @@ type fq_rel_series <: SeriesElem{fq}
                                                &z, i - 1, &a[i], &ctx)
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fq_rel_series_clear_fn)
       return z
    end
@@ -1289,33 +1582,108 @@ end
 
 ###############################################################################
 #
+#   FqAbsSeriesRing / fq_abs_series
+#
+###############################################################################
+
+const FqAbsSeriesID = ObjectIdDict()
+
+type FqAbsSeriesRing <: SeriesRing{fq}
+   base_ring::FqFiniteField
+   prec_max::Int
+   S::Symbol
+
+   function FqAbsSeriesRing(R::FqFiniteField, prec::Int, s::Symbol, cached=true)
+      if haskey(FqAbsSeriesID, (R, prec, s))
+         return FqAbsSeriesID[R, prec, s]::FqAbsSeriesRing
+      else
+         z = new(R, prec, s)
+         if cached
+            FqAbsSeriesID[R, prec, s] = z
+         end
+         return z
+      end
+   end
+end
+
+type fq_abs_series <: AbsSeriesElem{fq}
+   coeffs::Ptr{Void}
+   alloc::Int
+   length::Int
+   prec::Int
+   parent::FqAbsSeriesRing
+
+   function fq_abs_series(ctx::FqFiniteField)
+      z = new()
+      ccall((:fq_poly_init, :libflint), Void, 
+            (Ptr{fq_abs_series}, Ptr{FqFiniteField}), &z, &ctx)
+      finalizer(z, _fq_abs_series_clear_fn)
+      return z
+   end
+   
+   function fq_abs_series(ctx::FqFiniteField, a::Array{fq, 1}, len::Int, prec::Int)
+      z = new()
+      ccall((:fq_poly_init2, :libflint), Void, 
+            (Ptr{fq_abs_series}, Int, Ptr{FqFiniteField}), &z, len, &ctx)
+      for i = 1:len
+         ccall((:fq_poly_set_coeff, :libflint), Void, 
+               (Ptr{fq_abs_series}, Int, Ptr{fq}, Ptr{FqFiniteField}),
+                                               &z, i - 1, &a[i], &ctx)
+      end
+      z.prec = prec
+      finalizer(z, _fq_abs_series_clear_fn)
+      return z
+   end
+   
+   function fq_abs_series(ctx::FqFiniteField, a::fq_abs_series)
+      z = new()
+      ccall((:fq_poly_init, :libflint), Void, 
+            (Ptr{fq_abs_series}, Ptr{FqFiniteField}), &z, &ctx)
+      ccall((:fq_poly_set, :libflint), Void, 
+            (Ptr{fq_abs_series}, Ptr{fq_abs_series}, Ptr{FqFiniteField}), &z, &a, &ctx)
+      finalizer(z, _fq_abs_series_clear_fn)
+      return z
+   end
+end
+
+function _fq_abs_series_clear_fn(a::fq_abs_series)
+   ctx = base_ring(a)
+   ccall((:fq_poly_clear, :libflint), Void,
+         (Ptr{fq_abs_series}, Ptr{FqFiniteField}), &a, &ctx)
+end
+
+###############################################################################
+#
 #   FqNmodRelSeriesRing / fq_nmod_rel_series
 #
 ###############################################################################
 
-const FqNmodSeriesID = ObjectIdDict()
+const FqNmodRelSeriesID = ObjectIdDict()
 
 type FqNmodRelSeriesRing <: SeriesRing{fq_nmod}
    base_ring::FqNmodFiniteField
    prec_max::Int
    S::Symbol
 
-   function FqNmodRelSeriesRing(R::FqNmodFiniteField, prec::Int, s::Symbol)
-      if haskey(FqNmodSeriesID, (R, prec, s))
-         return FqNmodSeriesID[R, prec, s]::FqNmodRelSeriesRing
+   function FqNmodRelSeriesRing(R::FqNmodFiniteField, prec::Int, s::Symbol, cached=true)
+      if haskey(FqNmodRelSeriesID, (R, prec, s))
+         return FqNmodRelSeriesID[R, prec, s]::FqNmodRelSeriesRing
       else
          z = new(R, prec, s)
-         FqNmodSeriesID[R, prec, s] = z
+         if cached
+            FqNmodRelSeriesID[R, prec, s] = z
+         end
          return z
       end
    end
 end
 
-type fq_nmod_rel_series <: SeriesElem{fq_nmod}
+type fq_nmod_rel_series <: RelSeriesElem{fq_nmod}
    coeffs::Ptr{Void}
    alloc::Int
    length::Int
-   prec :: Int
+   prec::Int
+   val::Int
    parent::FqNmodRelSeriesRing
 
    function fq_nmod_rel_series(ctx::FqNmodFiniteField)
@@ -1326,7 +1694,7 @@ type fq_nmod_rel_series <: SeriesElem{fq_nmod}
       return z
    end
    
-   function fq_nmod_rel_series(ctx::FqNmodFiniteField, a::Array{fq_nmod, 1}, len::Int, prec::Int)
+   function fq_nmod_rel_series(ctx::FqNmodFiniteField, a::Array{fq_nmod, 1}, len::Int, prec::Int, val::Int)
       z = new()
       ccall((:fq_nmod_poly_init2, :libflint), Void, 
             (Ptr{fq_nmod_rel_series}, Int, Ptr{FqNmodFiniteField}), &z, len, &ctx)
@@ -1336,6 +1704,7 @@ type fq_nmod_rel_series <: SeriesElem{fq_nmod}
                                                &z, i - 1, &a[i], &ctx)
       end
       z.prec = prec
+      z.val = val
       finalizer(z, _fq_nmod_rel_series_clear_fn)
       return z
    end
@@ -1359,6 +1728,78 @@ end
 
 ###############################################################################
 #
+#   FqNmodAbsSeriesRing / fq_nmod_abs_series
+#
+###############################################################################
+
+const FqNmodAbsSeriesID = ObjectIdDict()
+
+type FqNmodAbsSeriesRing <: SeriesRing{fq_nmod}
+   base_ring::FqNmodFiniteField
+   prec_max::Int
+   S::Symbol
+
+   function FqNmodAbsSeriesRing(R::FqNmodFiniteField, prec::Int, s::Symbol, cached=true)
+      if haskey(FqNmodAbsSeriesID, (R, prec, s))
+         return FqNmodAbsSeriesID[R, prec, s]::FqNmodAbsSeriesRing
+      else
+         z = new(R, prec, s)
+         if cached
+            FqNmodAbsSeriesID[R, prec, s] = z
+         end
+         return z
+      end
+   end
+end
+
+type fq_nmod_abs_series <: AbsSeriesElem{fq_nmod}
+   coeffs::Ptr{Void}
+   alloc::Int
+   length::Int
+   prec::Int
+   parent::FqNmodAbsSeriesRing
+
+   function fq_nmod_abs_series(ctx::FqNmodFiniteField)
+      z = new()
+      ccall((:fq_nmod_poly_init, :libflint), Void, 
+            (Ptr{fq_nmod_abs_series}, Ptr{FqNmodFiniteField}), &z, &ctx)
+      finalizer(z, _fq_nmod_abs_series_clear_fn)
+      return z
+   end
+   
+   function fq_nmod_abs_series(ctx::FqNmodFiniteField, a::Array{fq_nmod, 1}, len::Int, prec::Int)
+      z = new()
+      ccall((:fq_nmod_poly_init2, :libflint), Void, 
+            (Ptr{fq_nmod_abs_series}, Int, Ptr{FqNmodFiniteField}), &z, len, &ctx)
+      for i = 1:len
+         ccall((:fq_nmod_poly_set_coeff, :libflint), Void, 
+               (Ptr{fq_nmod_abs_series}, Int, Ptr{fq_nmod}, Ptr{FqNmodFiniteField}),
+                                               &z, i - 1, &a[i], &ctx)
+      end
+      z.prec = prec
+      finalizer(z, _fq_nmod_abs_series_clear_fn)
+      return z
+   end
+   
+   function fq_nmod_abs_series(ctx::FqNmodFiniteField, a::fq_nmod_abs_series)
+      z = new()
+      ccall((:fq_nmod_poly_init, :libflint), Void, 
+            (Ptr{fq_nmod_abs_series}, Ptr{FqNmodFiniteField}), &z, &ctx)
+      ccall((:fq_nmod_poly_set, :libflint), Void, 
+            (Ptr{fq_nmod_abs_series}, Ptr{fq_nmod_abs_series}, Ptr{FqNmodFiniteField}), &z, &a, &ctx)
+      finalizer(z, _fq_nmod_abs_series_clear_fn)
+      return z
+   end
+end
+
+function _fq_nmod_abs_series_clear_fn(a::fq_nmod_abs_series)
+   ctx = base_ring(a)
+   ccall((:fq_nmod_poly_clear, :libflint), Void,
+         (Ptr{fq_nmod_abs_series}, Ptr{FqNmodFiniteField}), &a, &ctx)
+end
+
+###############################################################################
+#
 #   FmpqMatSpace / fmpq_mat
 #
 ###############################################################################
@@ -1371,12 +1812,14 @@ type FmpqMatSpace <: MatSpace{fmpq}
    cols::Int
    base_ring::FlintRationalField
 
-   function FmpqMatSpace(r::Int, c::Int)
+   function FmpqMatSpace(r::Int, c::Int, cached=true)
       if haskey(FmpqMatID, (r, c))
          return FmpqMatID[r, c]::FmpqMatSpace
       else
          z = new(r, c, FlintQQ)
-         FmpqMatID[r, c] = z
+         if cached
+            FmpqMatID[r, c] = z
+         end
          return z
       end
    end
@@ -1450,6 +1893,22 @@ type fmpq_mat <: MatElem{fmpq}
       return z
    end
 
+   function fmpq_mat{T <: Integer}(r::Int, c::Int, arr::Array{T, 1})
+      z = new()
+      ccall((:fmpq_mat_init, :libflint), Void, 
+            (Ptr{fmpq_mat}, Int, Int), &z, r, c)
+      finalizer(z, _fmpq_mat_clear_fn)
+      for i = 1:r
+         for j = 1:c
+            el = ccall((:fmpq_mat_entry, :libflint), Ptr{fmpq},
+                       (Ptr{fmpq_mat}, Int, Int), &z, i - 1, j - 1)
+            ccall((:fmpq_set, :libflint), Void,
+                  (Ptr{fmpq}, Ptr{fmpq}), el, &fmpq(arr[(i-1)*c+j]))
+         end
+      end
+      return z
+   end
+
    function fmpq_mat(r::Int, c::Int, d::fmpq)
       z = new()
       ccall((:fmpq_mat_init, :libflint), Void, 
@@ -1491,12 +1950,14 @@ type FmpzMatSpace <: MatSpace{fmpz}
    cols::Int
    base_ring::FlintIntegerRing
 
-   function FmpzMatSpace(r::Int, c::Int)
+   function FmpzMatSpace(r::Int, c::Int, cached=true)
       if haskey(FmpzMatID, (r, c))
          return FmpzMatID[r, c]::FmpzMatSpace
       else
          z = new(r, c, FlintZZ)
-         FmpzMatID[r, c] = z
+         if cached
+            FmpzMatID[r, c] = z
+         end
          return z
       end
    end
@@ -1570,6 +2031,22 @@ type fmpz_mat <: MatElem{fmpz}
       return z
    end
 
+   function fmpz_mat{T <: Integer}(r::Int, c::Int, arr::Array{T,1})
+      z = new()
+      ccall((:fmpz_mat_init, :libflint), Void,
+            (Ptr{fmpz_mat}, Int, Int), &z, r, c)
+      finalizer(z, _fmpz_mat_clear_fn)
+      for i = 1:r
+         for j = 1:c
+            el = ccall((:fmpz_mat_entry, :libflint), Ptr{fmpz},
+                       (Ptr{fmpz_mat}, Int, Int), &z, i - 1, j - 1)
+            ccall((:fmpz_set, :libflint), Void,
+                  (Ptr{fmpz}, Ptr{fmpz}), el, &fmpz(arr[(i-1)*c+j]))
+         end
+      end
+      return z
+   end
+
    function fmpz_mat(r::Int, c::Int, d::fmpz)
       z = new()
       ccall((:fmpz_mat_init, :libflint), Void, 
@@ -1611,7 +2088,7 @@ type NmodMatSpace <: MatSpace{GenRes{fmpz}}
   rows::Int
   cols::Int
 
-  function NmodMatSpace(R::GenResRing{fmpz}, r::Int, c::Int)
+  function NmodMatSpace(R::GenResRing{fmpz}, r::Int, c::Int, cached=true)
     (r < 0 || c < 0) && throw(error_dim_negative)
     R.modulus > typemax(UInt) && 
       error("Modulus of ResidueRing must less then ", fmpz(typemax(UInt)))
@@ -1619,15 +2096,26 @@ type NmodMatSpace <: MatSpace{GenRes{fmpz}}
       return NmodMatID[R, r, c]::NmodMatSpace
     else
       z = new(R, UInt(R.modulus), r, c)
-      NmodMatID[R, r, c] = z
+      if cached
+        NmodMatID[R, r, c] = z
+      end
       return z
     end
   end
 end
 
-function _check_dim{T}(r::Int, c::Int, arr::Array{T, 2}, transpose::Bool)
-  (r < 0 || c < 0) && throw(error_dim_negative)
-  (size(arr) != (transpose ? (c,r) : (r,c))) && error("Array of wrong dimension")
+function _check_dim{T}(r::Int, c::Int, arr::Array{T, 2}, transpose::Bool = false)
+  if !transpose
+    size(arr) != (r, c) && throw(ErrorConstrDimMismatch(r, c, size(arr)...))
+  else
+    size(arr) != (c, r) && throw(ErrorConstrDimMismatch(r, c, (reverse(size(arr)))...))
+  end
+  return nothing
+end
+
+function _check_dim{T}(r::Int, c::Int, arr::Array{T, 1})
+  length(arr) != r*c && throw(ErrorConstrDimMismatch(r, c, length(arr)))
+  return nothing
 end
 
 type nmod_mat <: MatElem{GenRes{fmpz}}
@@ -1668,6 +2156,26 @@ type nmod_mat <: MatElem{GenRes{fmpz}}
     return z
   end
 
+  function nmod_mat(r::Int, c::Int, n::UInt, arr::Array{UInt, 1}, transpose::Bool = false)
+    _check_dim(r, c, arr, transpose)
+    z = new()
+    ccall((:nmod_mat_init, :libflint), Void,
+            (Ptr{nmod_mat}, Int, Int, UInt), &z, r, c, n)
+    finalizer(z, _nmod_mat_clear_fn)
+    if transpose 
+      se = set_entry_t!
+      r,c = c,r
+    else
+      se = set_entry!
+    end
+    for i = 1:r
+      for j = 1:c
+        se(z, i, j, arr[(i-1)*c+j])
+      end
+    end
+    return z
+  end
+
   function nmod_mat(r::Int, c::Int, n::UInt, arr::Array{fmpz, 2}, transpose::Bool = false)
     z = new()
     ccall((:nmod_mat_init, :libflint), Void,
@@ -1687,7 +2195,31 @@ type nmod_mat <: MatElem{GenRes{fmpz}}
     return z
   end
 
+  function nmod_mat(r::Int, c::Int, n::UInt, arr::Array{fmpz, 1}, transpose::Bool = false)
+    z = new()
+    ccall((:nmod_mat_init, :libflint), Void,
+            (Ptr{nmod_mat}, Int, Int, UInt), &z, r, c, n)
+    finalizer(z, _nmod_mat_clear_fn)
+    if transpose 
+      se = set_entry_t!
+      r,c = c,r
+    else
+      se = set_entry!
+    end
+    for i = 1:r
+      for j = 1:c
+        se(z, i, j, arr[(i-1)*c+j])
+      end
+    end
+    return z
+  end
+
   function nmod_mat{T <: Integer}(r::Int, c::Int, n::UInt, arr::Array{T, 2}, transpose::Bool = false)
+    arr = map(fmpz, arr)
+    return nmod_mat(r, c, n, arr, transpose)
+  end
+
+  function nmod_mat{T <: Integer}(r::Int, c::Int, n::UInt, arr::Array{T, 1}, transpose::Bool = false)
     arr = map(fmpz, arr)
     return nmod_mat(r, c, n, arr, transpose)
   end
@@ -1769,12 +2301,14 @@ type FqPolyRing <: PolyRing{fq}
    base_ring::FqFiniteField
    S::Symbol
 
-   function FqPolyRing(R::FqFiniteField, s::Symbol)
+   function FqPolyRing(R::FqFiniteField, s::Symbol, cached=true)
       if haskey(FqPolyID, (R, s))
          return FqPolyID[(R,s)]::FqPolyRing
       else
          z = new(R,s)
-         FqPolyID[(R,s)] = z
+         if cached
+            FqPolyID[(R,s)] = z
+         end
          return z
       end
    end
@@ -1903,12 +2437,14 @@ type FqNmodPolyRing <: PolyRing{fq_nmod}
    base_ring::FqNmodFiniteField
    S::Symbol
 
-   function FqNmodPolyRing(R::FqNmodFiniteField, s::Symbol)
+   function FqNmodPolyRing(R::FqNmodFiniteField, s::Symbol, cached=true)
       if haskey(FqNmodPolyID, (R, s))
          return FqNmodPolyID[(R,s)]::FqNmodPolyRing
       else
          z = new(R,s)
-         FqNmodPolyID[(R,s)] = z
+         if cached
+            FqNmodPolyID[(R,s)] = z
+         end
          return z
       end
    end
@@ -2036,12 +2572,14 @@ const FlintPermID = ObjectIdDict()
 type FlintPermGroup <: Group
    n::Int
 
-   function FlintPermGroup(n::Int)
+   function FlintPermGroup(n::Int, cached=true)
       if haskey(FlintPermID, n)
          return FlintPermID[n]::FlintPermGroup
       else
          z = new(n)
-         FlintPermID[n] = z
+         if cached
+            FlintPermID[n] = z
+         end
          return z
       end
    end
@@ -2052,7 +2590,7 @@ type perm <: GroupElem
    parent::FlintPermGroup
 
    function perm(n::Int)
-      p = new(Array(Int, n))
+      p = new(Array{Int}(n))
       ccall((:_perm_set_one, :libflint), Void,
             (Ref{Int}, Int), p.d, length(p.d))
       return p
@@ -2060,7 +2598,7 @@ type perm <: GroupElem
 
    function perm(a::Array{Int, 1})
       n = length(a)
-      d = Array(Int, n)
+      d = Array{Int}(n)
       for i = 1:n
          d[i] = a[i] - 1
       end

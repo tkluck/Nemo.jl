@@ -122,7 +122,7 @@ doc"""
 """
 isunit(a::FracElem) = num(a) != 0
 
-function deepcopy{T <: RingElem}(a::GenFrac{T})
+function deepcopy_internal{T <: RingElem}(a::GenFrac{T}, dict::ObjectIdDict)
    v = GenFrac{T}(deepcopy(num(a)), deepcopy(den(a)))
    v.parent = parent(a)
    return v
@@ -138,7 +138,7 @@ canonical_unit(a::FracElem) = a
 
 ###############################################################################
 #
-#   AbstractString{} I/O
+#   AbstractString I/O
 #
 ###############################################################################
 
@@ -171,7 +171,7 @@ end
 
 needs_parentheses(x::FracElem) = den(x) == 1 && needs_parentheses(num(x))
 
-is_negative(x::FracElem) = !needs_parentheses(num(x)) && is_negative(num(x))
+isnegative(x::FracElem) = !needs_parentheses(num(x)) && isnegative(num(x))
 
 show_minus_one{T <: RingElem}(::Type{FracElem{T}}) = show_minus_one(T)
 
@@ -670,6 +670,33 @@ function gcd{T <: RingElem}(a::FracElem{T}, b::FracElem{T})
    return parent(a)(divexact(n, g), divexact(d, g))
 end
 
+################################################################################
+#
+#   Remove and valuation
+#
+################################################################################
+
+doc"""
+    remove{T <: RingElem}(z::FracElem{T}, p::T)
+> Return the tuple $n, x$ such that $z = p^nx$ where $x$ has valuation $0$ at
+> $p$.
+"""
+function remove{T <: RingElem}(z::FracElem{T}, p::T)
+   z == 0 && error("Not yet implemented")
+   v, d = remove(den(z), p)
+   w, n = remove(num(z), p)
+   return w-v, n//d
+end 
+
+doc"""
+    valuation{T <: RingElem}(z::FracElem{T}, p::T)
+> Return the valuation of $z$ at $p$.
+"""
+function valuation{T <: RingElem}(z::FracElem{T}, p::T)
+   v, _ = remove(z, p)
+   return v
+end
+  
 ###############################################################################
 #
 #   Unsafe operators and functions
@@ -744,30 +771,30 @@ end
 #
 ###############################################################################
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::RingElem)
+function (a::GenFracField{T}){T <: RingElem}(b::RingElem)
    return a(base_ring(a)(b))
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T})
+function (a::GenFracField{T}){T <: RingElem}()
    z = GenFrac{T}(zero(base_ring(a)), one(base_ring(a)))
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::fmpz)
+function (a::GenFracField{T}){T <: RingElem}(b::fmpz)
    z = GenFrac{T}(base_ring(a)(b), one(base_ring(a)))
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::T)
+function (a::GenFracField{T}){T <: RingElem}(b::T)
    parent(b) != base_ring(a) && error("Could not coerce to fraction")
    z = GenFrac{T}(b, one(base_ring(a)))
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::T, c::T)
+function (a::GenFracField{T}){T <: RingElem}(b::T, c::T)
    parent(b) != base_ring(a) && error("Could not coerce to fraction")
    parent(c) != base_ring(a) && error("Could not coerce to fraction")
    z = GenFrac{T}(b, c)
@@ -775,33 +802,33 @@ function Base.call{T <: RingElem}(a::GenFracField{T}, b::T, c::T)
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::T, c::Integer)
+function (a::GenFracField{T}){T <: RingElem}(b::T, c::Integer)
    parent(b) != base_ring(a) && error("Could not coerce to fraction")
    z = GenFrac{T}(b, base_ring(a)(c))
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::Integer, c::T)
+function (a::GenFracField{T}){T <: RingElem}(b::Integer, c::T)
    parent(c) != base_ring(a) && error("Could not coerce to fraction")
    z = GenFrac{T}(base_ring(a)(b), c)
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::Integer)
+function (a::GenFracField{T}){T <: RingElem}(b::Integer)
    z = GenFrac{T}(base_ring(a)(b), one(base_ring(a)))
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::Integer, c::Integer)
+function (a::GenFracField{T}){T <: RingElem}(b::Integer, c::Integer)
    z = GenFrac{T}(base_ring(a)(b), base_ring(a)(c))
    z.parent = a
    return z
 end
 
-function Base.call{T <: RingElem}(a::GenFracField{T}, b::GenFrac{T})
+function (a::GenFracField{T}){T <: RingElem}(b::GenFrac{T})
    a != parent(b) && error("Could not coerce to fraction")
    return b
 end

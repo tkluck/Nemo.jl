@@ -1,22 +1,13 @@
 language: julia
 sudo: false
-addons:
-  apt:
-    packages:
-      - texlive
 os:
   - linux
   - osx
 julia:
-  - 0.4
-  - release
+  - 0.5
   - nightly
 notifications:
   - email: false
-#script:
-  - julia -e 'Pkg.clone(pwd()); Pkg.test("Nemo")'
-
 after_success:
-  - julia -e 'Pkg.clone("https://github.com/MichaelHatherly/Documenter.jl")'
-  - julia -e 'cd(Pkg.dir("Nemo")); include(joinpath("doc", "build.jl"))'
-
+  - julia -e 'Pkg.add("Documenter")'
+  - DOCUMENTER_DEBUG=true julia -e 'cd(Pkg.dir("Nemo")); include(joinpath("docs", "make.jl"))'

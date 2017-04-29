@@ -56,7 +56,7 @@ end
 #   return strongequal(a, one(parent(a)))
 #end
 
-function deepcopy(a::arb_poly)
+function deepcopy_internal(a::arb_poly, dict::ObjectIdDict)
    z = arb_poly(a)
    z.parent = parent(a)
    return z
@@ -64,7 +64,7 @@ end
 
 ###############################################################################
 #
-#   AbstractString{} I/O
+#   AbstractString I/O
 #
 ###############################################################################
 
@@ -81,10 +81,10 @@ function show(io::IO, f::arb_poly)
   else
     print(io, "[ ")
     for i in 0:degree(f)-1
-      show(io, coeff(f,i))
+      print(io, coeff(f,i))
       print(io, ", ")
     end
-    show(coeff(f,degree(f)))
+    print(io, coeff(f,degree(f)))
     print(io, " ]")
   end
 end
@@ -595,7 +595,7 @@ function arb_vec(b::Array{arb, 1})
 end
 
 function array(R::ArbField, v::Ptr{arb_struct}, n::Int)
-   r = Array(arb, n)
+   r = Array{arb}(n)
    for i=1:n
        r[i] = R()
        ccall((:arb_set, :libarb), Void, (Ptr{arb}, Ptr{arb_struct}),
@@ -761,37 +761,41 @@ Base.promote_rule(::Type{arb_poly}, ::Type{fmpq_poly}) = arb_poly
 #
 ################################################################################
 
-function Base.call(a::ArbPolyRing)
+function (a::ArbPolyRing)()
    z = arb_poly()
    z.parent = a
    return z
 end
 
-function Base.call(a::ArbPolyRing, b::Union{Int,fmpz,fmpq,Float64,arb})
+function (a::ArbPolyRing)(b::Union{Int,fmpz,fmpq,Float64,arb})
    z = arb_poly(base_ring(a)(b), a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::ArbPolyRing, b::Array{arb, 1})
+function (a::ArbPolyRing)(b::Array{arb, 1})
    z = arb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::ArbPolyRing, b::fmpz_poly)
+(a::ArbPolyRing){T <: Integer}(b::Array{T, 1}) = a(map(base_ring(a), b))
+
+(a::ArbPolyRing)(b::Array{fmpz, 1}) = a(map(base_ring(a), b))
+
+function (a::ArbPolyRing)(b::fmpz_poly)
    z = arb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::ArbPolyRing, b::fmpq_poly)
+function (a::ArbPolyRing)(b::fmpq_poly)
    z = arb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::ArbPolyRing, b::arb_poly)
+function (a::ArbPolyRing)(b::arb_poly)
    z = arb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
@@ -803,9 +807,9 @@ end
 #
 ################################################################################
 
-function PolynomialRing(R::ArbField, s::AbstractString)
+function PolynomialRing(R::ArbField, s::AbstractString; cached = true)
   S = Symbol(s)
-  parent_obj = ArbPolyRing(R, S)
+  parent_obj = ArbPolyRing(R, S, cached)
   return parent_obj, parent_obj(fmpz_poly([fmpz(0), fmpz(1)]))
 end
 

@@ -39,8 +39,9 @@ export fmpz, FlintZZ, FlintIntegerRing, parent, show, convert, hash, fac, bell,
        combit!, crt, divisible, divisor_lenstra, fdivrem, tdivrem, fmodpow2,
        gcdinv, isprobabprime, issquare, jacobi, remove, root, size, isqrtrem,
        sqrtmod, trailing_zeros, sigma, eulerphi, fib, moebiusmu, primorial,
-       risingfac, numpart, canonical_unit, needs_parentheses, is_negative,
-       show_minus_one, parseint, addeq!, mul!, isunit, isequal, num, den
+       risingfac, numpart, canonical_unit, needs_parentheses, isnegative,
+       show_minus_one, parseint, addeq!, mul!, isunit, isequal, num, den,
+       iszero
 
 ###############################################################################
 #
@@ -95,7 +96,7 @@ function hash(a::fmpz, h::UInt)
 end
 
 function __fmpz_is_small(a::Int)
-   return (unsigned(a) >> (WORD_SIZE - 2) != 1)
+   return (unsigned(a) >> (Sys.WORD_SIZE - 2) != 1)
 end
 
 function __fmpz_limbs(a::Int)
@@ -126,7 +127,7 @@ end
 #
 ###############################################################################
 
-function deepcopy(a::fmpz)
+function deepcopy_internal(a::fmpz, dict::ObjectIdDict)
    z = fmpz()
    ccall((:fmpz_set, :libflint), Void, (Ptr{fmpz}, Ptr{fmpz}), &z, &a)
    return z
@@ -210,7 +211,7 @@ end
 
 ###############################################################################
 #
-#   AbstractString{} I/O
+#   AbstractString I/O
 #
 ###############################################################################
 
@@ -222,7 +223,7 @@ show(io::IO, a::FlintIntegerRing) = print(io, "Integer Ring")
 
 needs_parentheses(x::fmpz) = false
 
-is_negative(x::fmpz) = x < 0
+isnegative(x::fmpz) = x < 0
 
 show_minus_one(::Type{fmpz}) = false
 
@@ -548,6 +549,8 @@ function cmpabs(x::fmpz, y::fmpz)
     Int(ccall((:fmpz_cmpabs, :libflint), Cint, 
               (Ptr{fmpz}, Ptr{fmpz}), &x, &y))
 end
+
+isless(x::fmpz, y::fmpz) = x < y
 
 ###############################################################################
 #
@@ -933,6 +936,36 @@ end
 
 ###############################################################################
 #
+#   Factorization
+#
+###############################################################################
+
+function _factor(a::fmpz)
+   # This is a hack around https://github.com/JuliaLang/julia/issues/19963
+   # Remove this once julia 6.0 is required
+   if a == 1 || a == -1
+     return Dict{fmpz, Int}(), a
+   end
+
+   F = fmpz_factor()
+   ccall((:fmpz_factor, :libflint), Void, (Ptr{fmpz_factor}, Ptr{fmpz}), &F, &a)
+   res = Dict{fmpz, Int}()
+   for i in 1:F.num
+     z = fmpz()
+     ccall((:fmpz_factor_get_fmpz, :libflint), Void,
+           (Ptr{fmpz}, Ptr{fmpz_factor}, Int), &z, &F, i - 1)
+     res[z] = unsafe_load(F.exp, i)
+   end
+   return res, canonical_unit(a)
+end
+
+function factor(a::fmpz)
+   fac, z = _factor(a)
+   return Fac(z, fac)
+end
+
+###############################################################################
+#
 #   Number theoretic/combinatorial
 #
 ###############################################################################
@@ -1000,6 +1033,27 @@ function remove(x::fmpz, y::fmpz)
                (Ptr{fmpz}, Ptr{fmpz}, Ptr{fmpz}), &z, &x, &y)
    return num, z
 end
+
+remove(x::fmpz, y::Integer) = remove(x, fmpz(y))
+
+remove(x::Integer, y::fmpz) = remove(fmpz(x), y)
+
+remove(x::Integer, y::Integer) = remove(fmpz(x), fmpz(y))
+
+doc"""
+    valuation(x::fmpz, y::fmpz)
+> Return the largest $n$ such that $y^n$ divides $x$.
+"""
+function valuation(x::fmpz, y::fmpz)
+   n, _ = remove(x, y)
+   return n
+end
+
+valuation(x::fmpz, y::Integer) = valuation(x, fmpz(y))
+
+valuation(x::Integer, y::fmpz) = valuation(fmpz(x), y)
+
+valuation(x::Integer, y::Integer) = valuation(fmpz(x), fmpz(y))
 
 doc"""
     divisor_lenstra(n::fmpz, r::fmpz, m::fmpz)
@@ -1173,7 +1227,7 @@ doc"""
 > Windows 64.
 """
 function numpart(x::Int) 
-   if (@windows? true : false) && Int == Int64
+   if (is_windows() ? true : false) && Int == Int64
       error("not yet supported on win64")
    end
    x < 0 && throw(DomainError())
@@ -1189,7 +1243,7 @@ doc"""
 > Windows 64.
 """
 function numpart(x::fmpz) 
-   if (@windows? true : false) && Int == Int64
+   if (is_windows() ? true : false) && Int == Int64
       error("not yet supported on win64")
    end
    x < 0 && throw(DomainError())
@@ -1375,36 +1429,36 @@ end
 #
 ###############################################################################
 
-call(::FlintIntegerRing) = fmpz()
+(::FlintIntegerRing)() = fmpz()
 
-call(::FlintIntegerRing, a::Integer) = fmpz(a)
+(::FlintIntegerRing)(a::Integer) = fmpz(a)
 
-call(::FlintIntegerRing, a::AbstractString{}) = fmpz(a)
+(::FlintIntegerRing)(a::AbstractString) = fmpz(a)
 
-call(::FlintIntegerRing, a::fmpz) = a
+(::FlintIntegerRing)(a::fmpz) = a
 
-call(::FlintIntegerRing, a::Float64) = fmpz(a)
+(::FlintIntegerRing)(a::Float64) = fmpz(a)
 
-call(::FlintIntegerRing, a::Float32) = fmpz(Float64(a))
+(::FlintIntegerRing)(a::Float32) = fmpz(Float64(a))
 
-call(::FlintIntegerRing, a::Float16) = fmpz(Float64(a))
+(::FlintIntegerRing)(a::Float16) = fmpz(Float64(a))
 
-call(::FlintIntegerRing, a::BigFloat) = fmpz(BigInt(a))
+(::FlintIntegerRing)(a::BigFloat) = fmpz(BigInt(a))
 
 ###############################################################################
 #
-#   AbstractString{} parser
+#   String parser
 #
 ###############################################################################
 
-function parseint(::Type{fmpz}, s::AbstractString{}, base::Int = 10)
-    s = bytestring(s)
+function parse(::Type{fmpz}, s::String, base::Int = 10)
+    s = string(s)
     sgn = s[1] == '-' ? -1 : 1
     i = 1 + (sgn == -1)
     z = fmpz()
     err = ccall((:fmpz_set_str, :libflint),
                Int32, (Ptr{fmpz}, Ptr{UInt8}, Int32),
-               &z, bytestring(SubString{}{}(s, i)), base)
+               &z, string(SubString(s, i)), base)
     err == 0 || error("Invalid big integer: $(repr(s))")
     return sgn < 0 ? -z : z
 end
@@ -1415,7 +1469,7 @@ end
 #
 ###############################################################################
 
-fmpz(s::AbstractString{}) = parseint(fmpz, s)
+fmpz(s::AbstractString) = parse(fmpz, s)
 
 fmpz(z::Integer) = fmpz(BigInt(z))
 

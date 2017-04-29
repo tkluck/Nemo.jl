@@ -98,7 +98,7 @@ function degree(a::FqNmodFiniteField)
                 (Ptr{FqNmodFiniteField},), &a)
 end
 
-function deepcopy(d::fq_nmod)
+function deepcopy_internal(d::fq_nmod, dict::ObjectIdDict)
    z = fq_nmod(parent(d), d)
    z.parent = parent(d)
    return z
@@ -114,7 +114,7 @@ canonical_unit(x::fq_nmod) = x
 
 ###############################################################################
 #
-#   AbstractString{} I/O
+#   AbstractString I/O
 #
 ###############################################################################
 
@@ -122,7 +122,7 @@ function show(io::IO, x::fq_nmod)
    cstr = ccall((:fq_nmod_get_str_pretty, :libflint), Ptr{UInt8}, 
                 (Ptr{fq_nmod}, Ptr{FqNmodFiniteField}), &x, &x.parent)
 
-   print(io, bytestring(cstr))
+   print(io, unsafe_string(cstr))
 
    ccall((:flint_free, :libflint), Void, (Ptr{UInt8},), cstr)
 end
@@ -134,7 +134,7 @@ end
 
 needs_parentheses(x::fq_nmod) = x.length > 1
 
-is_negative(x::fq_nmod) = false
+isnegative(x::fq_nmod) = false
 
 show_minus_one(::Type{fq_nmod}) = true
 
@@ -415,27 +415,27 @@ Base.promote_rule(::Type{fq_nmod}, ::Type{fmpz}) = fq_nmod
 #
 ###############################################################################
 
-function Base.call(a::FqNmodFiniteField)
+function (a::FqNmodFiniteField)()
    z = fq_nmod(a)
    z.parent = a
    return z
 end
 
-Base.call(a::FqNmodFiniteField, b::Integer) = a(fmpz(b))
+(a::FqNmodFiniteField)(b::Integer) = a(fmpz(b))
 
-function Base.call(a::FqNmodFiniteField, b::Int)
+function (a::FqNmodFiniteField)(b::Int)
    z = fq_nmod(a, b)
    z.parent = a
    return z
 end
 
-function Base.call(a::FqNmodFiniteField, b::fmpz)
+function (a::FqNmodFiniteField)(b::fmpz)
    z = fq_nmod(a, b)
    z.parent = a
    return z
 end
 
-function Base.call(a::FqNmodFiniteField, b::fq_nmod)
+function (a::FqNmodFiniteField)(b::fq_nmod)
    parent(b) != a && error("Coercion between finite fields not implemented")
    return b
 end
@@ -446,16 +446,16 @@ end
 #
 ###############################################################################
 
-function FlintFiniteField(char::Int, deg::Int, s::AbstractString{})
+function FlintFiniteField(char::Int, deg::Int, s::AbstractString; cached = true)
    S = Symbol(s)
-   parent_obj = FqNmodFiniteField(fmpz(char), deg, S)
+   parent_obj = FqNmodFiniteField(fmpz(char), deg, S, cached)
 
    return parent_obj, gen(parent_obj) 
 end
 
-function FlintFiniteField(pol::nmod_poly, s::AbstractString{})
+function FlintFiniteField(pol::nmod_poly, s::AbstractString; cached = true)
    S = Symbol(s)
-   parent_obj = FqNmodFiniteField(pol, S)
+   parent_obj = FqNmodFiniteField(pol, S, cached)
 
    return parent_obj, gen(parent_obj) 
 end

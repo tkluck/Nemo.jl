@@ -220,7 +220,7 @@ end
 function powers{T <: RingElem}(a::T, d::Int)
    d <= 0 && throw(DomainError())
    S = parent(a)
-   A = Array(T, d + 1)
+   A = Array{T}(d + 1)
    A[1] = one(S)
    if d > 1
       c = a
@@ -243,6 +243,14 @@ function exp{T <: RingElem}(a::T)
    a != 0 && error("Exponential of nonzero element")
    return one(parent(a))
 end
+
+################################################################################
+#
+#   Transpose for ring elements
+#
+################################################################################
+
+transpose{T <: RingElem}(x::T) = deepcopy(x)
 
 ###############################################################################
 #
@@ -270,9 +278,15 @@ include("generic/SparsePoly.jl")
 
 include("generic/RelSeries.jl")
 
+include("generic/AbsSeries.jl")
+
 include("flint/fmpz_rel_series.jl")
 
+include("flint/fmpz_abs_series.jl")
+
 include("flint/fmpz_mod_rel_series.jl")
+
+include("flint/fmpz_mod_abs_series.jl")
 
 include("generic/Matrix.jl")
 
@@ -282,19 +296,7 @@ include("flint/fmpq_mat.jl")
 
 include("flint/nmod_mat.jl")
 
-include("pari/pari_int.jl")
-
-include("pari/pari_poly.jl")
-
-include("pari/pari_polmod.jl")
-
-include("pari/pari_vec.jl")
-
-include("pari/PariFactor.jl")
-
 include("Fields.jl")
-
-include("pari/pari_frac.jl")
 
 include("flint/fmpq_poly.jl")
 
@@ -302,9 +304,15 @@ include("flint/padic.jl")
 
 include("flint/fmpq_rel_series.jl")
 
+include("flint/fmpq_abs_series.jl")
+
 include("flint/fq_rel_series.jl")
 
+include("flint/fq_abs_series.jl")
+
 include("flint/fq_nmod_rel_series.jl")
+
+include("flint/fq_nmod_abs_series.jl")
 
 include("flint/fq_poly.jl")
 
@@ -317,12 +325,6 @@ include("arb/acb_poly.jl")
 include("arb/arb_mat.jl")
 
 include("arb/acb_mat.jl")
-
-include("pari/pari_poly2.jl")
-
-include("pari/pari_maximal_order_elem.jl")
-
-include("pari/PariIdeal.jl")
 
 include("Factor.jl")
 

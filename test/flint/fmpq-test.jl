@@ -40,6 +40,16 @@ function test_fmpq_constructors()
    println("PASS")
 end
 
+function test_fmpq_printing()
+   print("fmpq.constructors()...")
+
+   a = FlintQQ(1, 2)
+
+   @test string(a) == "1//2"
+   
+   println("PASS")
+end
+
 function test_fmpq_conversions()
    print("fmpq.conversions()...")
 
@@ -321,8 +331,20 @@ function test_fmpq_special_functions()
    println("PASS")
 end
 
+function test_fmpq_adhoc_remove_valuation()
+   print("fmpq.adhoc_remove_valuation()...")
+
+   a = fmpq(2, 3)
+
+   @test remove(a, 3) == (-1, fmpq(2, 1))
+   @test valuation(a, 3) == -1
+
+   println("PASS")
+end
+
 function test_fmpq()
    test_fmpq_constructors()
+   test_fmpq_printing()
    test_fmpq_conversions()
    test_fmpq_manipulation()
    test_fmpq_unary_ops()
@@ -340,6 +362,7 @@ function test_fmpq()
    test_fmpq_rational_reconstruction()
    test_fmpq_rational_enumeration()
    test_fmpq_special_functions()
+   test_fmpq_adhoc_remove_valuation()
 
    println("")
 end

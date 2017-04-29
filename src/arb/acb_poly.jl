@@ -56,7 +56,7 @@ end
 #   return isequal(a, one(parent(a)))
 #end
 
-function deepcopy(a::acb_poly)
+function deepcopy_internal(a::acb_poly, dict::ObjectIdDict)
    z = acb_poly(a)
    z.parent = parent(a)
    return z
@@ -64,7 +64,7 @@ end
 
 ###############################################################################
 #
-#   AbstractString{} I/O
+#   AbstractString I/O
 #
 ###############################################################################
 
@@ -81,10 +81,10 @@ function show(io::IO, f::acb_poly)
   else
     print(io, "[ ")
     for i in 0:degree(f)-1
-      show(io, coeff(f,i))
+      print(io, coeff(f,i))
       print(io, ", ")
     end
-    show(coeff(f,degree(f)))
+    print(io, coeff(f,degree(f)))
     print(io, " ]")
   end
 end
@@ -607,7 +607,7 @@ function acb_vec(b::Array{acb, 1})
 end
 
 function array(R::AcbField, v::Ptr{acb_struct}, n::Int)
-   r = Array(acb, n)
+   r = Array{acb}(n)
    for i=1:n
        r[i] = R()
        ccall((:acb_set, :libarb), Void, (Ptr{acb}, Ptr{acb_struct}),
@@ -720,7 +720,7 @@ doc"""
 function roots(x::acb_poly; target=0, isolate_real=false, initial_prec=0, max_prec=0, max_iter=0)
     deg = degree(x)
     if deg <= 0
-        return Array(acb, 0)
+        return Array{acb}(0)
     end
 
     initial_prec = (initial_prec >= 2) ? initial_prec : 32
@@ -884,43 +884,47 @@ Base.promote_rule(::Type{acb_poly}, ::Type{arb_poly}) = acb_poly
 #
 ################################################################################
 
-function Base.call(a::AcbPolyRing)
+function (a::AcbPolyRing)()
    z = acb_poly()
    z.parent = a
    return z
 end
 
-function Base.call(a::AcbPolyRing, b::Union{Int,fmpz,fmpq,Float64,Complex{Float64},Complex{Int},arb,acb})
+function (a::AcbPolyRing)(b::Union{Int,fmpz,fmpq,Float64,Complex{Float64},Complex{Int},arb,acb})
    z = acb_poly(base_ring(a)(b), a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::AcbPolyRing, b::Array{acb, 1})
+function (a::AcbPolyRing)(b::Array{acb, 1})
    z = acb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::AcbPolyRing, b::fmpz_poly)
+(a::AcbPolyRing){T <: Integer}(b::Array{T, 1}) = a(map(base_ring(a), b))
+
+(a::AcbPolyRing)(b::Array{fmpz, 1}) = a(map(base_ring(a), b))
+
+function (a::AcbPolyRing)(b::fmpz_poly)
    z = acb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::AcbPolyRing, b::fmpq_poly)
+function (a::AcbPolyRing)(b::fmpq_poly)
    z = acb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::AcbPolyRing, b::arb_poly)
+function (a::AcbPolyRing)(b::arb_poly)
    z = acb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
 end
 
-function Base.call(a::AcbPolyRing, b::acb_poly)
+function (a::AcbPolyRing)(b::acb_poly)
    z = acb_poly(b, a.base_ring.prec)
    z.parent = a
    return z
@@ -932,9 +936,9 @@ end
 #
 ################################################################################
 
-function PolynomialRing(R::AcbField, s::AbstractString)
+function PolynomialRing(R::AcbField, s::AbstractString; cached = true)
   S = Symbol(s)
-  parent_obj = AcbPolyRing(R, S)
+  parent_obj = AcbPolyRing(R, S, cached)
   return parent_obj, parent_obj(fmpz_poly([fmpz(0), fmpz(1)]))
 end
 

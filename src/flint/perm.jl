@@ -28,7 +28,7 @@ doc"""
 """
 parent(a::perm) = a.parent
 
-function deepcopy(a::perm)
+function deepcopy_internal(a::perm, dict::ObjectIdDict)
    R = parent(a)
    p = R()
    ccall((:_perm_set, :libflint), Void, 
@@ -37,7 +37,7 @@ function deepcopy(a::perm)
 end
 
 function Base.hash(a::perm, h::UInt)
-   b = 0x595dee0e71d271d0
+   b = 0x595dee0e71d271d0%UInt
    for i in 1:a.d
          b $= hash(a[i - 1], h) $ h
          b = (b << 1) | (b >> (sizeof(Int)*8 - 1))
@@ -161,20 +161,20 @@ end
 #
 ###############################################################################
 
-function Base.call(R::FlintPermGroup)
+function (R::FlintPermGroup)()
    z = perm(R.n)
    z.parent = R
    return z
 end
 
-function Base.call(R::FlintPermGroup, a::Array{Int, 1})
+function (R::FlintPermGroup)(a::Array{Int, 1})
    length(a) != R.n && error("Unable to coerce to permutation")
    z = perm(a)
    z.parent = R
    return z
 end
 
-function Base.call(R::FlintPermGroup, a::perm)
+function (R::FlintPermGroup)(a::perm)
    parent(a) != R && error("Unable to coerce to permutation")
    return a
 end

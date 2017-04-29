@@ -17,6 +17,12 @@ export fmpq, FlintQQ, FractionField, Rational, FlintRationalField, height,
 
 fmpq(a::Rational{BigInt}) = fmpq(fmpz(a.num), fmpz(a.den))
 
+function fmpq(a::Rational{Int})
+  r = fmpq()
+  ccall((:fmpq_set_si, :libflint), Void, (Ptr{fmpq}, Int64, UInt64), &r, num(a), den(a))
+  return r
+end
+
 fmpq(a::Integer) = fmpq(fmpz(a), fmpz(1))
 
 fmpq(a::Integer, b::Integer) = fmpq(fmpz(a), fmpz(b))
@@ -118,7 +124,7 @@ function height_bits(a::fmpq)
    return ccall((:fmpq_height_bits, :libflint), Int, (Ptr{fmpq},), &a)
 end
 
-function deepcopy(a::fmpq)
+function deepcopy_internal(a::fmpq, dict::ObjectIdDict)
    z = fmpq()
    ccall((:fmpq_set, :libflint), Void, (Ptr{fmpq}, Ptr{fmpq}), &z, &a)
    return z
@@ -134,7 +140,7 @@ canonical_unit(a::fmpq) = a
 
 ###############################################################################
 #
-#   AbstractString{} I/O
+#   AbstractString I/O
 #
 ###############################################################################
 
@@ -151,7 +157,7 @@ end
 
 needs_parentheses(x::fmpq) = false
 
-is_negative(x::fmpq) = x < 0
+isnegative(x::fmpq) = x < 0
 
 show_minus_one(::Type{fmpq}) = false
 
@@ -456,6 +462,16 @@ function gcd(a::fmpq, b::fmpq)
    return z
 end
 
+################################################################################
+#
+#   Ad hoc Remove and valuation
+#
+################################################################################
+
+remove(a::fmpq, b::Integer) = remove(a, fmpz(b))
+
+valuation(a::fmpq, b::Integer) = valuation(a, fmpz(b))
+
 ###############################################################################
 #
 #   Rational reconstruction
@@ -700,27 +716,27 @@ end
 #
 ###############################################################################
 
-call(a::FlintRationalField) = fmpq(fmpz(0), fmpz(1))
+(a::FlintRationalField)() = fmpq(fmpz(0), fmpz(1))
 
-call(a::FlintRationalField, b::Rational{BigInt}) = fmpq(b) 
+(a::FlintRationalField)(b::Rational{BigInt}) = fmpq(num(b), den(b)) 
 
-call(::FlintRationalField, x::Rational) = fmpq(x.num, x.den)
+(a::FlintRationalField)(b::Rational) = fmpq(b.num, b.den)
 
-call(a::FlintRationalField, b::Integer) = fmpq(b)
+(a::FlintRationalField)(b::Integer) = fmpq(b)
 
-call(a::FlintRationalField, b::Int, c::Int) = fmpq(b, c)
+(a::FlintRationalField)(b::Int, c::Int) = fmpq(b, c)
 
-call(a::FlintRationalField, b::fmpz) = fmpq(b)
+(a::FlintRationalField)(b::fmpz) = fmpq(b)
 
-call(a::FlintRationalField, b::Integer, c::Integer) = fmpq(b, c)
+(a::FlintRationalField)(b::Integer, c::Integer) = fmpq(b, c)
 
-call(a::FlintRationalField, b::fmpz, c::Integer) = fmpq(b, c)
+(a::FlintRationalField)(b::fmpz, c::Integer) = fmpq(b, c)
 
-call(a::FlintRationalField, b::Integer, c::fmpz) = fmpq(b, c)
+(a::FlintRationalField)(b::Integer, c::fmpz) = fmpq(b, c)
 
-call(a::FlintRationalField, b::fmpz, c::fmpz) = fmpq(b, c)
+(a::FlintRationalField)(b::fmpz, c::fmpz) = fmpq(b, c)
 
-call(a::FlintRationalField, b::fmpq) = b
+(a::FlintRationalField)(b::fmpq) = b
 
 ###############################################################################
 #

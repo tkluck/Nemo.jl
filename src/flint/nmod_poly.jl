@@ -11,7 +11,7 @@ export NmodPolyRing, nmod_poly, parent, base_ring, elem_type, length, zero,
        isirreducible, issquarefree, factor, factor_squarefree,
        factor_distinct_deg, factor_shape, setcoeff!, canonical_unit,
        add!, sub!, mul!, call, PolynomialRing, check_parent, gcdx, mod,
-       invmod, gcdinv, mulmod, powmod, zero!, one!, valuation
+       invmod, gcdinv, mulmod, powmod, zero!, one!
 
 ################################################################################
 #
@@ -42,7 +42,7 @@ end
 #
 ################################################################################
 
-function lead_is_unit(a::nmod_poly)
+function lead_isunit(a::nmod_poly)
   d = degree(a)
   u = ccall((:nmod_poly_get_coeff_ui, :libflint), UInt, (Ptr{nmod_poly}, Int), &a, d)
   n = ccall((:n_gcd, :libflint), UInt, (UInt, UInt), u, modulus(a))
@@ -77,6 +77,11 @@ function coeff(x::nmod_poly, n::Int)
           (Ptr{nmod_poly}, Int), &x, n))
 end
 
+function coeff_raw(x::nmod_poly, n::Int)
+  return ccall((:nmod_poly_get_coeff_ui, :libflint), UInt,
+                (Ptr{nmod_poly}, Int), &x, n)
+end
+
 zero(R::NmodPolyRing) = R(UInt(0))
 
 one(R::NmodPolyRing) = R(UInt(1))
@@ -95,7 +100,7 @@ modulus(R::NmodPolyRing) = R.n
 
 var(R::NmodPolyRing) = R.S
 
-function deepcopy(a::nmod_poly)
+function deepcopy_internal(a::nmod_poly, dict::ObjectIdDict)
   z = nmod_poly(modulus(a), a)
   z.parent = a.parent
   return z
@@ -103,7 +108,7 @@ end
 
 ################################################################################
 #
-#  AbstractString{} I/O
+#  AbstractString I/O
 #
 ################################################################################
 
@@ -112,8 +117,8 @@ function show(io::IO, x::nmod_poly)
     print(io, "0")
   else
     cstr = ccall((:nmod_poly_get_str_pretty, :libflint), Ptr{UInt8},
-            (Ptr{nmod_poly}, Ptr{UInt8}), &x, bytestring(string(var(parent(x)))))
-    print(io, bytestring(cstr))
+            (Ptr{nmod_poly}, Ptr{UInt8}), &x, string(var(parent(x))))
+    print(io, unsafe_string(cstr))
     ccall((:flint_free, :libflint), Void, (Ptr{UInt8}, ), cstr)
   end
 end
@@ -400,7 +405,7 @@ end
 function divexact(x::nmod_poly, y::nmod_poly)
   check_parent(x, y)
   iszero(y) && throw(DivideError())
-  !lead_is_unit(y) && error("Impossible inverse in divexact")
+  !lead_isunit(y) && error("Impossible inverse in divexact")
   z = parent(x)()
   ccall((:nmod_poly_div, :libflint), Void, 
           (Ptr{nmod_poly}, Ptr{nmod_poly}, Ptr{nmod_poly}), &z, &x, &y)
@@ -436,7 +441,7 @@ end
 function divrem(x::nmod_poly, y::nmod_poly)
   check_parent(x,y)
   iszero(y) && throw(DivideError())
-  !lead_is_unit(y) && error("Impossible inverse in divrem")
+  !lead_isunit(y) && error("Impossible inverse in divrem")
   q = parent(x)()
   r = parent(x)()
   ccall((:nmod_poly_divrem, :libflint), Void,
@@ -454,7 +459,7 @@ end
 function rem(x::nmod_poly, y::nmod_poly)
   check_parent(x,y)
   iszero(y) && throw(DivideError()) 
-  !lead_is_unit(y) && error("Impossible inverse in rem")
+  !lead_isunit(y) && error("Impossible inverse in rem")
   z = parent(x)()
   ccall((:nmod_poly_rem, :libflint), Void,
           (Ptr{nmod_poly}, Ptr{nmod_poly}, Ptr{nmod_poly}), &z, &x, &y)
@@ -545,10 +550,11 @@ end
 #
 ################################################################################
 
-function resultant(x::nmod_poly, y::nmod_poly)
-  check_parent(x,y)
-  !is_prime(modulus(x)) && error("Modulus not prime in resultant")
-  z = parent(x)()
+function resultant(x::nmod_poly, y::nmod_poly,  check::Bool = true)
+  if check
+    check_parent(x,y)
+    !is_prime(modulus(x)) && error("Modulus not prime in resultant")
+  end
   r = ccall((:nmod_poly_resultant, :libflint), UInt,
           (Ptr{nmod_poly}, Ptr{nmod_poly}), &x, &y)
   return base_ring(x)(r)
@@ -618,8 +624,8 @@ function interpolate(R::NmodPolyRing, x::Array{GenRes{fmpz}, 1},
                                       y::Array{GenRes{fmpz}, 1})
   z = R()
 
-  ax = Array(UInt, length(x))
-  ay = Array(UInt, length(y))
+  ax = Array{UInt}(length(x))
+  ay = Array{UInt}(length(y))
 
   t = fmpz()
 
@@ -726,9 +732,14 @@ doc"""
 > Return the factorisation of $x$.
 """
 function factor(x::nmod_poly)
+  fac, z = _factor(x)
+  return Fac(parent(x)(z), fac)
+end
+
+function _factor(x::nmod_poly)
   !is_prime(modulus(x)) && error("Modulus not prime in factor")
   fac = nmod_poly_factor(x.mod_n)
-  ccall((:nmod_poly_factor, :libflint), UInt,
+  z = ccall((:nmod_poly_factor, :libflint), UInt,
           (Ptr{nmod_poly_factor}, Ptr{nmod_poly}), &fac, &x)
   res = Dict{nmod_poly,Int}()
   for i in 1:fac.num
@@ -738,7 +749,7 @@ function factor(x::nmod_poly)
     e = unsafe_load(fac.exp,i)
     res[f] = e
   end
-  return res 
+  return res, base_ring(x)(z)
 end  
 
 doc"""
@@ -747,6 +758,10 @@ doc"""
 """
 function factor_squarefree(x::nmod_poly)
   !is_prime(modulus(x)) && error("Modulus not prime in factor_squarefree")
+  return Fac(parent(x)(lead(x)), _factor_squarefree(x))
+end
+
+function _factor_squarefree(x::nmod_poly)
   fac = nmod_poly_factor(x.mod_n)
   ccall((:nmod_poly_factor_squarefree, :libflint), UInt,
           (Ptr{nmod_poly_factor}, Ptr{nmod_poly}), &fac, &x)
@@ -768,18 +783,18 @@ doc"""
 function factor_distinct_deg(x::nmod_poly)
   !issquarefree(x) && error("Polynomial must be squarefree")
   !is_prime(modulus(x)) && error("Modulus not prime in factor_distinct_deg")
-  degs = Array(Int, degree(x))
+  degs = Array{Int}(degree(x))
   degss = [ pointer(degs) ]
   fac = nmod_poly_factor(x.mod_n)
   ccall((:nmod_poly_factor_distinct_deg, :libflint), UInt,
           (Ptr{nmod_poly_factor}, Ptr{nmod_poly}, Ptr{Ptr{Int}}),
           &fac, &x, degss)
-  res = Dict{nmod_poly,Int}()
+  res = Dict{Int,nmod_poly}()
   for i in 1:fac.num
     f = parent(x)()
     ccall((:nmod_poly_factor_get_nmod_poly, :libflint), Void,
             (Ptr{nmod_poly}, Ptr{nmod_poly_factor}, Int), &f, &fac, i-1)
-    res[f] = degs[i]        
+    res[degs[i]] = f
   end
   return res 
 end  
@@ -789,7 +804,7 @@ function factor_shape{T <: RingElem}(x::PolyElem{T})
   square_fac = factor_squarefree(x)
   for (f, i) in square_fac
     discdeg = factor_distinct_deg(f)
-    for (g,j) in discdeg
+    for (j,g) in discdeg
       num = div(degree(g), j)*i
       if haskey(res, j)
         res[j] += num
@@ -803,27 +818,26 @@ end
 
 ################################################################################
 #
-#    Valuation
+#   Remove
 #
 ################################################################################
-#CF TODO: use squaring for fast large valuation
 #
 ################################################################################
 
-function valuation(z::nmod_poly, p::nmod_poly)
-  check_parent(z,p)
-  z == 0 && error("Not yet implemented")
-  v = 0
-  zz = z
-  z, r = divrem(zz, p)
-
-  while r == 0
-    zz = z
-    z, r = divrem(zz, p)
-    v += 1
-  end
-
-  return v, zz
+doc"""
+    remove(z::nmod_poly, p::nmod_poly)
+> Computes the valuation of $z$ at $p$, that is, the largest $k$ such that
+> $p^k$ divides $z$. Additionally, $z/p^k$ is returned as well.
+>
+> See also `valuation`, which only returns the valuation.
+"""
+function remove(z::nmod_poly, p::nmod_poly)
+   check_parent(z,p)
+   z == 0 && error("Not yet implemented")
+   z = deepcopy(z)
+   v = ccall((:nmod_poly_remove, :libflint), Int,
+               (Ptr{nmod_poly}, Ptr{nmod_poly}), &z,  &p)
+   return v, z
 end
 
 ################################################################################
@@ -931,7 +945,7 @@ Base.promote_rule(::Type{nmod_poly}, ::Type{GenRes{fmpz}}) = nmod_poly
 #
 ###############################################################################
 
-function Base.call(f::nmod_poly, a::GenRes{fmpz})
+function (f::nmod_poly)(a::GenRes{fmpz})
    if parent(a) != base_ring(f)
       return subst(f, a)
    end
@@ -944,51 +958,53 @@ end
 #
 ################################################################################
 
-function Base.call(R::NmodPolyRing)
+function (R::NmodPolyRing)()
   z = nmod_poly(R.n)
   z.parent = R
   return z
 end
 
-function Base.call(R::NmodPolyRing, x::fmpz)
+function (R::NmodPolyRing)(x::fmpz)
   r = ccall((:fmpz_fdiv_ui, :libflint), UInt, (Ptr{fmpz}, UInt), &x, R.n)
   z = nmod_poly(R.n, r)
   z.parent = R
   return z
 end
 
-function Base.call(R::NmodPolyRing, x::UInt)
+function (R::NmodPolyRing)(x::UInt)
   z = nmod_poly(R.n, x)
   z.parent = R
   return z
 end
 
-function Base.call(R::NmodPolyRing, x::Integer)
+function (R::NmodPolyRing)(x::Integer)
   z = nmod_poly(R.n, x)
   z.parent = R
   return z
 end
 
-function Base.call(R::NmodPolyRing, x::GenRes{fmpz})
+function (R::NmodPolyRing)(x::GenRes{fmpz})
   base_ring(R) != parent(x) && error("Wrong parents")
   z = nmod_poly(R.n, UInt(x.data))
   z.parent = R
   return z
 end
 
-function Base.call(R::NmodPolyRing, arr::Array{fmpz, 1})
+function (R::NmodPolyRing)(arr::Array{fmpz, 1})
   z = nmod_poly(R.n, arr)
   z.parent = R
   return z
 end
 
-function Base.call(R::NmodPolyRing, arr::Array{UInt, 1})
+function (R::NmodPolyRing)(arr::Array{UInt, 1})
   z = nmod_poly(R.n, arr)
   z.parent = R
   return z
 end
 
-function Base.call(R::NmodPolyRing, arr::Array{GenRes{fmpz}, 1})
+(R::NmodPolyRing){T <: Integer}(arr::Array{T, 1}) = R(map(base_ring(R), arr))
+
+function (R::NmodPolyRing)(arr::Array{GenRes{fmpz}, 1})
   if length(arr) > 0
      (base_ring(R) != parent(arr[1])) && error("Wrong parents")
   end
@@ -997,7 +1013,7 @@ function Base.call(R::NmodPolyRing, arr::Array{GenRes{fmpz}, 1})
   return z
 end
 
-function Base.call(R::NmodPolyRing, x::fmpz_poly)
+function (R::NmodPolyRing)(x::fmpz_poly)
   z = nmod_poly(R.n, x)
   z.parent = R
   return z
